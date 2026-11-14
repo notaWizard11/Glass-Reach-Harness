@@ -14,7 +14,7 @@ const filterInputs=storyFilterOptions.map(([key,label])=>{
   input.type='checkbox';
   input.value=key;
   input.checked=!Array.isArray(savedFilters)||savedFilters.includes(key);
-  row.append(input,' '+label);
+  row.append(input,el('span',label));
   $('feed-filter-options').append(row);
   return input;
 });
@@ -37,6 +37,22 @@ for(const [id,checked] of [['feed-show-all',true],['feed-hide-all',false]]){
   $(id).onclick=()=>{for(const input of filterInputs)input.checked=checked;saveStoryFilters();};
 }
 updateFilterSummary();
+const filterMenu=$('feed-filters');
+function positionFilterMenu(){
+  const anchor=$('feed-filter-summary').getBoundingClientRect();
+  const gap=6,edge=10;
+  const roomBelow=window.innerHeight-anchor.bottom-gap-edge;
+  const roomAbove=anchor.top-gap-edge;
+  const above=roomBelow<280&&roomAbove>roomBelow;
+  filterMenu.style.setProperty('--filter-menu-height',Math.max(1,above?roomAbove:roomBelow)+'px');
+  filterMenu.style.left=Math.max(edge,Math.min(anchor.left,window.innerWidth-filterMenu.offsetWidth-edge))+'px';
+  filterMenu.style.top=above?'auto':Math.max(edge,anchor.bottom+gap)+'px';
+  filterMenu.style.bottom=above?(window.innerHeight-anchor.top+gap)+'px':'auto';
+}
+filterMenu.addEventListener('toggle',event=>{if(event.newState==='open')positionFilterMenu();});
+for(const event of ['scroll','resize']){
+  window.addEventListener(event,()=>{if(filterMenu.matches(':popover-open'))positionFilterMenu();},{passive:true});
+}
 const soundToggle=$('story-sound');
 soundToggle.checked=localStorage.getItem('gr-story-sound')==='on';
 let storyAudio, soundProfile, lastEventSeq=0, heardMessages=new Set();

@@ -56,3 +56,17 @@ test('older history and export include events beyond the initial window',async t
  const get=async path=>(await fetch(app.url+'api/'+path,{headers:{'X-Glass-Reach-Dashboard':'1'}})).json();
  assert.equal((await get('session')).events.length,600);const older=await get('history?before=701');assert.equal(older.length,500);assert.equal(older.at(-1).seq,700);assert.equal((await get('export')).events.length,1300);
 });
+
+test('live feed polls without browser requests, avoids overlap and honors pause',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'glass-reach-live-')),app=await startServer({demo:true,port:0,dataDir:dir,liveIntervalMs:20});t.after(()=>app.stop());
+ const headers={'X-Glass-Reach-Dashboard':'1'};
+ const session=await (await fetch(app.url+'api/session',{headers})).json();
+ let calls=0,active=0,maxActive=0;
+ app.game.refresh=async()=>{calls++;active++;maxActive=Math.max(maxActive,active);await new Promise(r=>setTimeout(r,45));active--;};
+ await new Promise(r=>setTimeout(r,180));
+ assert.ok(calls>=2,'server keeps checking with no browser requests');
+ assert.equal(maxActive,1,'slow refreshes do not pile up');
+ await fetch(app.url+'api/settings',{method:'POST',headers:{...headers,'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({profile:session.profile.id,liveFeed:false})});
+ await new Promise(r=>setTimeout(r,70));const paused=calls;
+ await new Promise(r=>setTimeout(r,90));assert.equal(calls,paused);
+});

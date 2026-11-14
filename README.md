@@ -99,3 +99,5 @@ Main files: `dashboard/server.mjs` (HTTP), `store.mjs` (records), `game.mjs` and
 CI runs the tests on Windows and Linux. Use branches and pull requests for changes, and record notable changes in CHANGELOG.md. Pushing a version tag such as `v0.1.0` runs tests and creates a **draft** GitHub release with a source ZIP. Review the draft before publishing it. Release ZIPs are generated from tracked files only; local credentials and saved records are excluded.
 
 This is an independent companion project, not an official game or OpenAI distribution. No open-source license has been selected yet; public visibility alone does not grant a general reuse license.
+
+The story feed checks the game every five seconds while Live is enabled, including when the browser tab is in the background. Keep the dashboard server running and the computer awake. Turning off Live pauses these checks for that character. Browsers may delay background rendering; returning to the tab immediately loads the collected updates.

@@ -7,10 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { Store } from './store.mjs';
 import { Game, validateOperation } from './game.mjs';
 import { Agent } from './agent.mjs';
-export async function startServer({demo=false,port=demo?47382:47381,dataDir}={}) {
+export async function startServer({demo=false,port=demo?47382:47381,dataDir,liveIntervalMs=5000}={}) {
  const store=await new Store(dataDir||fileURLToPath(new URL('../.glassreach-data/'+(demo?'demo':'live'),import.meta.url)),demo).init();
  const game=new Game(store,demo),agent=new Agent(store);await game.importLegacy();
- const csrf=randomBytes(24).toString('hex'),watchers=new Map();
+ const csrf=randomBytes(24).toString('hex'),watchers=new Map(),liveProfiles=new Map();
  const mobile=process.env.GLASS_REACH_MOBILE_ORIGIN?new URL(process.env.GLASS_REACH_MOBILE_ORIGIN):null,login=process.env.GLASS_REACH_MOBILE_LOGIN;
  if(mobile&&(mobile.protocol!=='https:'||!mobile.hostname.endsWith('.ts.net')||mobile.pathname!=='/'||!login))throw new Error('Private phone access requires an exact Tailscale HTTPS origin and login.');
  const assets={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
@@ -58,7 +58,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir}={})
      if(req.headers['x-glass-reach-dashboard']!=='1')return json(res,403,{error:'Dashboard header required.'});
      if(req.method!=='GET'&&req.headers['x-csrf-token']!==csrf)return json(res,403,{error:'Reload the dashboard before submitting.'});
      const b=req.method==='GET'?{}:await body(req),id=url.searchParams.get('profile')||b.profile||store.data.profiles[0].id,p=store.profile(id),c=store.character(id),route=req.method+' '+url.pathname;
-     if(route==='GET /api/session'){if(demo&&!c.state)await game.refresh(p);return json(res,200,packet(id));}
+     if(route==='GET /api/session'){liveProfiles.set(p.credential,id);if(demo&&!c.state)await game.refresh(p);return json(res,200,packet(id));}
      if(route==='POST /api/refresh'){await game.refresh(p);return json(res,200,packet(id));}
      if(route==='POST /api/inspect')return json(res,200,await game.read(p,b.op,b.args||{}));
      if(route==='POST /api/action')return json(res,200,await execute(p,b.op,b.args,b.requestId));
@@ -68,6 +68,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir}={})
      if(route==='POST /api/agent/reset'){if(c.agentStatus==='working')throw new Error('Stop the current reply first.');c.sessions??=[];c.sessions.push({time:new Date().toISOString(),messages:c.messages});c.messages=[];c.threadId=null;await store.save();return json(res,200,packet(id));}
      if(route==='POST /api/settings'){
        if(typeof b.masterPrompt==='string'&&b.masterPrompt!==store.data.masterPrompt){store.data.promptVersions.unshift({text:store.data.masterPrompt,time:new Date().toISOString()});store.data.promptVersions=store.data.promptVersions.slice(0,20);store.data.masterPrompt=b.masterPrompt;}
+       if(typeof b.liveFeed==='boolean')p.liveFeed=b.liveFeed;
        if(typeof b.model==='string')store.data.model=b.model;if(typeof b.instructions==='string')p.instructions=b.instructions;if(['manual','suggest'].includes(b.mode))p.mode=b.mode;
        await store.save();return json(res,200,packet(id));
      }
@@ -104,7 +105,16 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir}={})
  });
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
  const background=setInterval(async()=>{for(const p of store.data.profiles){const c=store.character(p.id);if(p.mode!=='suggest'||c.agentStatus==='working'||Date.now()-(c.lastSuggestedAt||0)<300000)continue;try{await game.refresh(p);if(c.state?.connection==='Saved observation')continue;if(c.lastSuggestedCursor===c.state?.cursor)continue;c.lastSuggestedCursor=c.state.cursor;c.lastSuggestedAt=Date.now();await runAgent(p,'Review the current situation and prepare up to three useful next actions for my approval. Do not repeat pending suggestions.','suggestions');}catch{}}},60000);background.unref();
- const stop=()=>{clearInterval(background);for(const w of watchers.values())clearTimeout(w.timer);watchers.clear();agent.close();server.close();};
+ let liveBusy=false;
+ const liveTimer=setInterval(async()=>{
+   if(liveBusy)return;liveBusy=true;
+   try{for(const id of liveProfiles.values()){
+     const p=store.profile(id),c=store.character(id);
+     if(p.liveFeed===false||c.agentStatus==='working')continue;
+     try{await game.refresh(p);}catch{/* Retry on the next interval. */}
+   }}finally{liveBusy=false;}
+ },liveIntervalMs);liveTimer.unref();
+ const stop=()=>{clearInterval(liveTimer);clearInterval(background);for(const w of watchers.values())clearTimeout(w.timer);watchers.clear();agent.close();server.close();};
  const url='http://127.0.0.1:'+server.address().port+'/';console.log((demo?'Demo':'Glass Reach')+': '+url);return {server,store,game,agent,url,stop};
 }
 if(process.argv[1]===fileURLToPath(import.meta.url)){const app=await startServer({demo:process.argv.includes('--demo'),port:Number(process.env.PORT)||undefined});if(process.argv.includes('--open'))execFile('rundll32.exe',['url.dll,FileProtocolHandler',app.url],{windowsHide:true});process.on('SIGINT',()=>{app.stop();process.exit();});process.on('SIGTERM',()=>{app.stop();process.exit();});}

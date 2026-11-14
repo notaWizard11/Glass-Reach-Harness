@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline';
 import { readFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { resolveCodex } from './codex-path.mjs';
 const obj=properties=>({type:'object',additionalProperties:false,properties,required:Object.keys(properties)});
 const str={type:'string'};
 export const answerSchema=obj({reply:str,suggestions:{type:'array',items:obj({title:str,reason:str,op:{type:'string',enum:['act','say','remember','intend','inspect','recall']},argumentsJson:str})},map:{anyOf:[{type:'null'},obj({title:str,description:str,nodes:{type:'array',items:obj({id:str,label:str,x:{type:'number'},y:{type:'number'},note:str})},edges:{type:'array',items:obj({from:str,to:str,uncertain:{type:'boolean'}})}})]}});
@@ -18,10 +19,11 @@ export class Agent {
       overrides.push(`mcp_servers.${name}.enabled=false`);
     }
     const cwd=join(this.store.dir,'agent-workspace');await mkdir(cwd,{recursive:true});this.cwd=cwd;
-    this.child=spawn(process.env.GLASS_REACH_CODEX||'codex',['app-server',...overrides.flatMap(x=>['-c',x])],{cwd,windowsHide:true,env:{...process.env,CODEX_HOME:home},stdio:['pipe','pipe','pipe']});
+    const executable=await resolveCodex();
+    this.child=spawn(executable,['app-server',...overrides.flatMap(x=>['-c',x])],{cwd,windowsHide:true,env:{...process.env,CODEX_HOME:home},stdio:['pipe','pipe','pipe']});
     this.child.stderr.resume();this.child.stdin.on('error',()=>{});
     createInterface({input:this.child.stdout}).on('line',line=>{try{this.receive(JSON.parse(line));}catch{}});
-    this.child.on('error',()=>this.fail('Codex could not start. Install/sign in to the Codex CLI, then reconnect.'));
+    this.child.on('error',e=>this.fail('Codex could not be launched ('+(e.code||'startup error')+'). Check the installed executable or GLASS_REACH_CODEX setting.'));
     this.child.on('exit',()=>this.fail('Codex disconnected. Your saved conversation is still available.'));
     await this.request('initialize',{clientInfo:{name:'glass_reach_companion',title:'Glass Reach',version:'2.0.0'}},20000);
     this.send({method:'initialized',params:{}});

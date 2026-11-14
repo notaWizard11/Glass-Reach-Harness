@@ -1,0 +1,110 @@
+import { runGameTurn } from './game-turn.mjs';
+import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { randomUUID, randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { Store } from './store.mjs';
+import { Game, validateOperation } from './game.mjs';
+import { Agent } from './agent.mjs';
+export async function startServer({demo=false,port=demo?47382:47381,dataDir}={}) {
+ const store=await new Store(dataDir||fileURLToPath(new URL('../.glassreach-data/'+(demo?'demo':'live'),import.meta.url)),demo).init();
+ const game=new Game(store,demo),agent=new Agent(store);await game.importLegacy();
+ const csrf=randomBytes(24).toString('hex'),watchers=new Map();
+ const mobile=process.env.GLASS_REACH_MOBILE_ORIGIN?new URL(process.env.GLASS_REACH_MOBILE_ORIGIN):null,login=process.env.GLASS_REACH_MOBILE_LOGIN;
+ if(mobile&&(mobile.protocol!=='https:'||!mobile.hostname.endsWith('.ts.net')||mobile.pathname!=='/'||!login))throw new Error('Private phone access requires an exact Tailscale HTTPS origin and login.');
+ const assets={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
+ async function body(req){let s='';for await(const chunk of req){s+=chunk;if(s.length>300000)throw new Error('Request is too large.');}return s?JSON.parse(s):{};}
+ const json=(res,status,data)=>res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'}).end(JSON.stringify(data));
+ const packet=id=>({...store.publicData(id),csrf,watchers:[...watchers.values()].filter(x=>x.profileId===id).map(({timer,...x})=>x)});
+ async function runAgent(p,text,purpose='chat'){
+   const c=store.character(p.id);if(c.agentStatus==='working')throw new Error('This character already has a response in progress.');
+   const source={location:c.state?.here?.id,entity:p.entityId,cursor:c.state?.cursor};
+   c.stopRequested=false;c.agentStatus='working';c.agentProgress=0;c.agentPreview='';c.messages.push({id:randomUUID(),role:'user',mode:purpose==='game'?'game':'chat',text,time:new Date().toISOString()});await store.save();
+   (async()=>{try{
+     let answer;
+     if(purpose==='game'){
+       const reply=await runGameTurn({profile:p,character:c,text,game,execute,save:()=>store.save(),cancelled:()=>c.stopRequested,
+         plan:execution=>demo?Promise.resolve(execution.results.length?{reply:'The fictional dialogue was recorded.',suggestions:[]}:{reply:'',suggestions:[{title:'Speak your words in the fictional preview',op:'say',argumentsJson:JSON.stringify({text})}]}):agent.reply(p,text,'game',undefined,execution)});
+       c.messages.push({id:randomUUID(),role:'assistant',mode:'game',text:reply,time:new Date().toISOString()});c.agentStatus='idle';return;
+     }
+     if(demo){const s=c.state;answer={reply:purpose==='atlas'?'I have charted the routes recorded in this fictional scene. This is a schematic, not a scale map.':'This is a fictional preview. Sera is waiting at the gate, and the road is open. You could ask her about the lights or inspect the scout’s note.',suggestions:purpose==='atlas'?[]:[{title:'Ask Sera about the lights',reason:'She witnessed them from the road.',op:'say',argumentsJson:JSON.stringify({text:'Where did you see the three lights stop?',to:'sera'})}],map:purpose==='atlas'?{title:'Roads around '+s.here.name,description:text,nodes:[{id:s.here.id,label:s.here.name,x:50,y:50,note:'Current location'},...s.exits.map((e,i)=>({id:e.to,label:e.name,x:50+36*Math.cos(i*Math.PI*2/s.exits.length),y:50+36*Math.sin(i*Math.PI*2/s.exits.length),note:e.locked?'Locked route':'Observed exit'}))],edges:s.exits.map(e=>({from:s.here.id,to:e.to,uncertain:false}))}:null};}
+     else answer=await agent.reply(p,text,purpose,t=>{c.agentProgress=t.length;const m=t.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/s);if(m){try{c.agentPreview=JSON.parse('"'+m[1].replace(/\\$/,'')+'"');}catch{}}});
+     c.messages.push({id:randomUUID(),role:'assistant',text:answer.reply,time:new Date().toISOString()});
+     for(const proposal of (answer.suggestions||[]).slice(0,12)){try{const args=JSON.parse(proposal.argumentsJson);if(!['act','say','remember','intend'].includes(proposal.op))continue;validateOperation(proposal.op,args);c.suggestions.push({id:randomUUID(),title:proposal.title,reason:proposal.reason,op:proposal.op,args,status:'pending',...source,created:new Date().toISOString()});}catch{}}
+     if(answer.map){const m=answer.map;if(!Array.isArray(m.nodes)||m.nodes.length>100||!Array.isArray(m.edges))throw new Error('The map response was invalid.');c.maps.push({...m,id:randomUUID(),created:new Date().toISOString(),request:text,sourceCursor:c.state?.cursor,location:c.state?.here?.id});}
+     c.agentStatus='idle';
+   }catch(e){c.agentStatus='error';c.messages.push({id:randomUUID(),role:'error',text:e.message,time:new Date().toISOString()});}finally{c.activeThread=null;c.agentPreview='';await store.save();}})();
+ }
+ async function execute(p,op,args,requestId){
+   validateOperation(op,args);const c=store.character(p.id);
+   if(op==='join'&&args.entity!==undefined&&args.entity!==p.entityId)throw new Error('Reconnect only the character assigned to this profile.');
+   if(op==='join'&&args.template&&p.entityId)throw new Error('Create a new empty profile before creating a new game character.');
+   if(!requestId||typeof requestId!=='string')throw new Error('Missing action identifier.');
+   if(c.requests[requestId])return c.requests[requestId];
+   c.requests[requestId]={status:'pending',message:'Submitted; do not retry until confirmed.'};await store.save();
+   try{const r=await game.execute(p,op,args);c.requests[requestId]={status:r.ok===false?'refused':'complete',result:r};}catch(e){c.requests[requestId]={status:'uncertain',message:e.message};}
+   await store.save();return c.requests[requestId];
+ }
+ const server=createServer(async(req,res)=>{
+   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');
+   res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+   const localHost='127.0.0.1:'+server.address().port,proxy=req.headers['x-forwarded-host']||req.headers['x-forwarded-proto']||req.headers['tailscale-user-login'];
+   const origin=mobile&&req.headers.host===mobile.host&&req.headers['tailscale-user-login']===login?mobile.origin:req.headers.host===localHost&&!proxy?'http://'+localHost:null;
+   if(!origin||(req.headers.origin&&req.headers.origin!==origin)||req.headers['sec-fetch-site']==='cross-site')return json(res,403,{error:'Origin not allowed.'});
+   const url=new URL(req.url,origin);
+   try{
+     if(!url.pathname.startsWith('/api/')){const a=assets[url.pathname];if(!a||req.method!=='GET')return res.writeHead(404).end();res.writeHead(200,{'Content-Type':a[1]+'; charset=utf-8'}).end(await readFile(new URL(a[0],import.meta.url)));return;}
+     if(req.headers['x-glass-reach-dashboard']!=='1')return json(res,403,{error:'Dashboard header required.'});
+     if(req.method!=='GET'&&req.headers['x-csrf-token']!==csrf)return json(res,403,{error:'Reload the dashboard before submitting.'});
+     const b=req.method==='GET'?{}:await body(req),id=url.searchParams.get('profile')||b.profile||store.data.profiles[0].id,p=store.profile(id),c=store.character(id),route=req.method+' '+url.pathname;
+     if(route==='GET /api/session'){if(demo&&!c.state)await game.refresh(p);return json(res,200,packet(id));}
+     if(route==='POST /api/refresh'){await game.refresh(p);return json(res,200,packet(id));}
+     if(route==='POST /api/inspect')return json(res,200,await game.read(p,b.op,b.args||{}));
+     if(route==='POST /api/action')return json(res,200,await execute(p,b.op,b.args,b.requestId));
+     if(route==='POST /api/agent'){if(!b.text?.trim())throw new Error('Enter a request.');if(b.mode!=null&&!['chat','game'].includes(b.mode))throw new Error('Choose Talk to Codex or Act in game.');await runAgent(p,b.text,b.mode==='game'?'game':['atlas','suggestions'].includes(b.purpose)?b.purpose:'chat');return json(res,202,{ok:true});}
+     if(route==='POST /api/agent/connect')return json(res,200,demo?{connected:true,demo:true,models:[]}:await agent.start());
+     if(route==='POST /api/agent/stop'){c.stopRequested=true;await agent.stopThread(c.activeThread);return json(res,200,{ok:true});}
+     if(route==='POST /api/agent/reset'){if(c.agentStatus==='working')throw new Error('Stop the current reply first.');c.sessions??=[];c.sessions.push({time:new Date().toISOString(),messages:c.messages});c.messages=[];c.threadId=null;await store.save();return json(res,200,packet(id));}
+     if(route==='POST /api/settings'){
+       if(typeof b.masterPrompt==='string'&&b.masterPrompt!==store.data.masterPrompt){store.data.promptVersions.unshift({text:store.data.masterPrompt,time:new Date().toISOString()});store.data.promptVersions=store.data.promptVersions.slice(0,20);store.data.masterPrompt=b.masterPrompt;}
+       if(typeof b.model==='string')store.data.model=b.model;if(typeof b.instructions==='string')p.instructions=b.instructions;if(['manual','suggest'].includes(b.mode))p.mode=b.mode;
+       await store.save();return json(res,200,packet(id));
+     }
+     if(route==='POST /api/local'){for(const key of ['draft','organization','notes'])if(b[key]!==undefined)c[key]=b[key];await store.save();return json(res,200,{ok:true});}
+     if(route==='POST /api/map'){const m=b.map;if(!m||!Array.isArray(m.nodes)||m.nodes.length>100||!Array.isArray(m.edges))throw new Error('Invalid map.');c.maps.push({...m,id:randomUUID(),created:new Date().toISOString(),sourceCursor:c.state?.cursor,location:c.state?.here?.id});await store.save();return json(res,200,{ok:true});}
+     if(route==='POST /api/profiles'){
+       if(!b.name?.trim())throw new Error('Give this character profile a name.');
+       const pid=randomUUID(),profile={id:pid,name:b.name.trim(),entityId:b.entityId?.trim()||'',instructions:'',mode:'manual',credential:b.token?pid:p.credential};
+       if(b.token&&!demo){const r=await game.transport(profile,'',{token:b.token},true);if(!r.ok)throw new Error('Could not protect the credential.');}
+       store.data.profiles.push(profile);store.character(pid);if(demo)await game.refresh(profile);await store.save();return json(res,200,{id:pid});
+     }
+     if(route==='POST /api/suggestion'){
+       const q=c.suggestions.find(x=>x.id===b.id);if(!q)throw new Error('Suggestion not found.');if(q.status!=='pending')throw new Error('This suggestion has already been handled.');
+       if(b.dismiss){q.status='dismissed';await store.save();return json(res,200,{ok:true});}
+       if(q.entity!==p.entityId)throw new Error('Suggestion belongs to a different character.');q.status='reviewing';await store.save();
+       try{await game.refresh(p);}catch(e){q.status='pending';await store.save();throw e;}
+       if(!demo&&c.state?.connection!=='Live'){q.status='pending';await store.save();throw new Error('Reconnect before approving.');}
+       if(q.location!==c.state?.here?.id){q.status='stale';await store.save();throw new Error('The character has moved. Prepare a new suggestion for this location.');}
+       const args=b.args||q.args;try{validateOperation(q.op,args);}catch(e){q.status='pending';await store.save();throw e;}q.status='executing';await store.save();const r=await execute(p,q.op,args,'suggestion-'+q.id);q.status=r.status;await store.save();return json(res,200,r);
+     }
+     if(route==='POST /api/watch'){
+       if(b.stop){const w=watchers.get(b.stop);if(w?.profileId===id){clearTimeout(w.timer);watchers.delete(b.stop);}return json(res,200,{ok:true});}
+       if([...watchers.values()].some(w=>w.profileId===id&&w.status==='watching'))throw new Error('Stop the current watch before setting another.');
+       const kind=b.kind,value=String(b.value||'').slice(0,100);if(!['arrival','reply','water','dusk'].includes(kind))throw new Error('Choose a watch condition.');
+       const expression=kind==='arrival'?`arrived(${JSON.stringify(value)})`:kind==='reply'?`heard('', by=${JSON.stringify(value)})`:kind==='water'?"me['water'] <= 3":"ambient.get('time_of_day') == 'dusk'";
+       const w={id:randomUUID(),profileId:id,kind,value,status:'watching',started:new Date().toISOString(),timer:null};watchers.set(w.id,w);
+       async function poll(){if(!watchers.has(w.id))return;try{const r=demo?{fired:kind==='dusk'}:await game.serial(p,async()=>{await game.assertCharacter(p);return game.transport(p,'wait',{until:expression,timeout:10,since:c.state?.cursor||0});});if(!watchers.has(w.id))return;if(r.ok===false)throw new Error(r.reason);if(r.fired){w.status='fired';c.messages.push({id:randomUUID(),role:'notice',text:'Watch triggered: '+kind+' '+value,time:new Date().toISOString()});await game.refresh(p);await store.save();return;}}catch(e){w.status='error';w.error=e.message;return;}w.timer=setTimeout(poll,3000);}
+       w.timer=setTimeout(poll,100);return json(res,200,{ok:true});
+     }
+     if(route==='GET /api/history'){const before=Number(url.searchParams.get('before'))||Infinity;return json(res,200,c.events.filter(e=>e.seq<before).slice(-500));}
+     if(route==='GET /api/export')return json(res,200,{...packet(id),events:c.events,csrf:undefined,profiles:undefined});
+     return json(res,404,{error:'Unknown endpoint.'});
+   }catch(e){json(res,400,{error:e.message});}
+ });
+ await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
+ const background=setInterval(async()=>{for(const p of store.data.profiles){const c=store.character(p.id);if(p.mode!=='suggest'||c.agentStatus==='working'||Date.now()-(c.lastSuggestedAt||0)<300000)continue;try{await game.refresh(p);if(c.state?.connection==='Saved observation')continue;if(c.lastSuggestedCursor===c.state?.cursor)continue;c.lastSuggestedCursor=c.state.cursor;c.lastSuggestedAt=Date.now();await runAgent(p,'Review the current situation and prepare up to three useful next actions for my approval. Do not repeat pending suggestions.','suggestions');}catch{}}},60000);background.unref();
+ const stop=()=>{clearInterval(background);for(const w of watchers.values())clearTimeout(w.timer);watchers.clear();agent.close();server.close();};
+ const url='http://127.0.0.1:'+server.address().port+'/';console.log((demo?'Demo':'Glass Reach')+': '+url);return {server,store,game,agent,url,stop};
+}
+if(process.argv[1]===fileURLToPath(import.meta.url)){const app=await startServer({demo:process.argv.includes('--demo'),port:Number(process.env.PORT)||undefined});if(process.argv.includes('--open'))execFile('rundll32.exe',['url.dll,FileProtocolHandler',app.url],{windowsHide:true});process.on('SIGINT',()=>{app.stop();process.exit();});process.on('SIGTERM',()=>{app.stop();process.exit();});}

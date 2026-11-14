@@ -1,0 +1,28 @@
+/.glassreach-token.dpapi
+/.glassreach-observations.jsonl
+/.glassreach-monitor-state.json
+/.glassreach-dashboard-cache.json
+/.glassreach-dashboard-cache.json.*.tmp
+/.glassreach-data/
+/dashboard/test-output/
+*.dpapi
+*.jsonl
+.env
+.env.*
+!.env.example
+*.log
+node_modules/
+dist/
+/Glass Reach Dashboard Source.zip
+/Glass Reach Dashboard Handoff.md
+/Glass Reach Interaction Research.md
+/investigation.html
+/dashboard/legacy/
+/dashboard/legacy-*.mjs
+/dashboard/state.ps1
+/dashboard/read-state.mjs
+/dashboard/mcp-server.mjs
+/dashboard/mcp-bridge.js
+/dashboard/demo-state.json
+/dashboard/README.md
+/dashboard/MOBILE.md

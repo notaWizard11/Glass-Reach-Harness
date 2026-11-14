@@ -101,3 +101,5 @@ CI runs the tests on Windows and Linux. Use branches and pull requests for chang
 This is an independent companion project, not an official game or OpenAI distribution. No open-source license has been selected yet; public visibility alone does not grant a general reuse license.
 
 The story feed checks the game every five seconds while Live is enabled, including when the browser tab is in the background. Keep the dashboard server running and the computer awake. Turning off Live pauses these checks for that character. Browsers may delay background rendering; returning to the tab immediately loads the collected updates.
+
+Agent settings loads the models available to your signed-in Codex account automatically. Choose a General model and optional overrides for Inner thoughts, Game actions & narration, Atlas diagrams, and Automated suggestions; then select Save model choices. Empty overrides inherit the general model. Account default uses your Codex configuration.

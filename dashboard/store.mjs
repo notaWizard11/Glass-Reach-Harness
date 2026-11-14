@@ -16,7 +16,7 @@ export class Store {
   profile(id) { const p=this.data.profiles.find(x=>x.id===id); if(!p) throw new Error('Character profile not found.'); return p; }
   character(id) { this.profile(id); return this.data.characters[id]??={state:null,events:[],messages:[],suggestions:[],maps:[],notes:[],organization:{},draft:'',agentStatus:'idle',threadId:null,requests:{}}; }
   save() { const content=JSON.stringify(this.data); const task=this.queue.then(async()=>{ const temp=join(this.dir,randomUUID()+'.tmp'); await writeFile(temp,content,'utf8'); for(let attempt=0;;attempt++){try{await rename(temp,join(this.dir,'ledger.json'));break;}catch(e){if(attempt>=5||!['EPERM','EACCES','EBUSY'].includes(e.code))throw e;await delay(100*(attempt+1));}} }); this.queue=task.catch(()=>{}); return task; }
-  publicData(id) { const c=this.character(id); return {profile:this.profile(id),profiles:this.data.profiles,masterPrompt:this.data.masterPrompt,promptVersions:this.data.promptVersions,model:this.data.model,...c,events:c.events.slice(-600),requests:undefined,demo:this.demo}; }
+  publicData(id) { const c=this.character(id); return {profile:this.profile(id),profiles:this.data.profiles,masterPrompt:this.data.masterPrompt,promptVersions:this.data.promptVersions,model:this.data.model,modelsByPurpose:this.data.modelsByPurpose||{},...c,events:c.events.slice(-600),requests:undefined,demo:this.demo}; }
 }
 export function unique(rows,key='id') { return [...new Map(rows.filter(Boolean).map(x=>[x[key],x])).values()]; }
 export function ingest(c, raw, events=[]) {

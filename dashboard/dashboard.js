@@ -1,6 +1,42 @@
 import {storyRows} from './timeline.mjs';
 'use strict';
 const $=id=>document.getElementById(id),el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
+const storyFilterOptions=[
+  ['say','Dialogue'],['action','Actions'],['result','Results'],['description','Game descriptions'],
+  ['movement','Arrivals & departures'],['thought','Inner thoughts'],['player','Your messages'],
+  ['combat','Checks & combat'],['items','Items & discoveries'],['notice','Watch & system'],
+  ['error','Connection & request issues'],['event','Other game events'],
+];
+let savedFilters;
+try{savedFilters=JSON.parse(localStorage.getItem('gr-story-filters'));}catch{}
+const filterInputs=storyFilterOptions.map(([key,label])=>{
+  const row=el('label'),input=el('input');
+  input.type='checkbox';
+  input.value=key;
+  input.checked=!Array.isArray(savedFilters)||savedFilters.includes(key);
+  row.append(input,' '+label);
+  $('feed-filter-options').append(row);
+  return input;
+});
+function updateFilterSummary(){
+  const count=filterInputs.filter(input=>input.checked).length;
+  $('feed-filter-summary').textContent=count===filterInputs.length?'Story filters':'Story filters ('+count+' shown)';
+}
+function saveStoryFilters(){
+  localStorage.setItem('gr-story-filters',JSON.stringify(filterInputs.filter(input=>input.checked).map(input=>input.value)));
+  updateFilterSummary();
+  renderEvents();
+}
+function storyFilterType(row){
+  if(row.message?.role==='user')return 'player';
+  if(combat.has(row.event?.kind))return 'combat';
+  if(items.has(row.event?.kind))return 'items';
+  return row.category;
+}
+for(const [id,checked] of [['feed-show-all',true],['feed-hide-all',false]]){
+  $(id).onclick=()=>{for(const input of filterInputs)input.checked=checked;saveStoryFilters();};
+}
+updateFilterSummary();
 const soundToggle=$('story-sound');
 soundToggle.checked=localStorage.getItem('gr-story-sound')==='on';
 let storyAudio, soundProfile, lastEventSeq=0, heardMessages=new Set();
@@ -57,6 +93,103 @@ const modelSelectIds=['model','model-chat','model-game','model-atlas','model-sug
 function fillModels(models){for(const id of modelSelectIds){const select=$(id),selected=settingsDirty?select.value:id==='model'?data.model||'':data.modelsByPurpose?.[id.slice(6)]||'';select.replaceChildren();const base=el('option',id==='model'?'Account default':'Use general model');base.value='';select.append(base);for(const m of models){const o=el('option',m.displayName||m.model);o.value=m.model;select.append(o);}if(selected&&![...select.options].some(o=>o.value===selected)){const o=el('option',selected+' (saved choice)');o.value=selected;select.append(o);}select.value=selected;}}
 async function connectModels(){if(modelsLoading)return;modelsLoading=true;$('codex-info').textContent='Loading available models…';try{const r=await api('agent/connect',{});fillModels(r.models||[]);modelsLoaded=true;$('codex-info').textContent=r.demo?'Demo replies are simulated.':r.account?'Codex connected. Choose models below.':'Codex is running, but not signed in. Run codex login in a terminal.';}catch(e){$('codex-info').textContent=e.message;}finally{modelsLoading=false;}}
 const fingerprints=new Map(),olderEvents=new Map();
+let sceneId=null,sceneImageUrl=null,scenePreviewVersion=0,sceneRequestProfile=null;
+function selectAtlasView(scenes){
+  $('atlas-map-view').hidden=scenes;
+  $('atlas-scene-view').hidden=!scenes;
+  $('atlas-diagrams').setAttribute('aria-pressed',String(!scenes));
+  $('atlas-scenes').setAttribute('aria-pressed',String(scenes));
+}
+async function previewScene(scene,selected=profile){
+  sceneId=scene.id;
+  const version=++scenePreviewVersion;
+  $('scene-title').textContent=scene.title;
+  $('scene-download').hidden=true;
+  $('scene-preview').textContent='Loading image…';
+  try{
+    const response=await fetch('/api/scene-image?profile='+encodeURIComponent(selected)+'&id='+encodeURIComponent(scene.id),
+      {headers:{'X-Glass-Reach-Dashboard':'1'}});
+    if(!response.ok)throw new Error('The saved image could not be loaded.');
+    const blob=await response.blob();
+    if(profile!==selected||version!==scenePreviewVersion)return;
+    if(sceneImageUrl)URL.revokeObjectURL(sceneImageUrl);
+    sceneImageUrl=URL.createObjectURL(blob);
+    const img=el('img');
+    img.src=sceneImageUrl;
+    img.alt='Illustration of '+scene.title;
+    $('scene-preview').replaceChildren(img);
+    if(scene.description)paragraph($('scene-preview'),scene.description,'caption');
+    $('scene-download').hidden=false;
+  }catch(error){
+    if(profile===selected&&version===scenePreviewVersion)$('scene-preview').textContent=error.message;
+  }
+}
+$('atlas-diagrams').onclick=()=>selectAtlasView(false);
+$('atlas-scenes').onclick=()=>selectAtlasView(true);
+$('scene-generate').onclick=async()=>{
+  const selected=profile;
+  sceneRequestProfile=selected;
+  renderScenes();
+  $('scene-status').textContent='Generating an illustration…';
+  try{
+    const scene=await api('scene-image',{description:$('scene-request').value},selected);
+    await load(selected);
+    if(profile!==selected)return;
+    await previewScene(scene,selected);
+    $('scene-status').textContent='Image saved to Atlas.';
+  }catch(error){
+    if(profile===selected)$('scene-status').textContent=error.message;
+  }finally{
+    if(sceneRequestProfile===selected)sceneRequestProfile=null;
+    if(profile===selected)renderScenes();
+  }
+};
+$('scene-download').onclick=()=>{
+  if(!sceneImageUrl)return;
+  const link=el('a');
+  link.href=sceneImageUrl;
+  link.download='glass-reach-scene.png';
+  link.click();
+};
+function renderScenes(){
+  $('scene-location').textContent=state().here?.name?'Based on your last observation of '+state().here.name+'.':'Sync to load a scene first.';
+  const generating=data.sceneImageBusy||sceneRequestProfile===profile;
+  $('scene-generate').disabled=!data.sceneImageEnabled||!state().here||generating;
+  $('scene-generate').textContent=generating?'Generating…':'Generate scene image';
+  $('scene-generate').title=data.sceneImageEnabled?'':'Set OPENAI_API_KEY on the dashboard server and relaunch.';
+  $('scene-key-help').hidden=Boolean(data.sceneImageEnabled);
+  change('scene-list',[profile,data.sceneImages],()=>{
+    const scenes=data.sceneImages||[];
+    $('scene-list').replaceChildren(...[...scenes].reverse().map(scene=>{
+      const entry=button(scene.title,()=>previewScene(scene),'map-entry');
+      entry.append(el('small',new Date(scene.created).toLocaleString()));
+      return entry;
+    }));
+    if(!scenes.some(scene=>scene.id===sceneId)){
+      sceneId=null;
+      ++scenePreviewVersion;
+      if(sceneImageUrl)URL.revokeObjectURL(sceneImageUrl);
+      sceneImageUrl=null;
+      $('scene-title').textContent='Scene preview';
+      $('scene-download').hidden=true;
+      empty($('scene-preview'),'Generate or select a scene image.');
+    }
+  });
+}
+
+let liveDeadline=null;
+function renderLiveCountdown(){
+  const label=$('live-countdown');
+  if(offline)label.textContent='Offline';
+  else if(data?.profile.liveFeed===false)label.textContent='Live paused';
+  else if(data?.liveChecking)label.textContent='Checking…';
+  else if(data?.agentStatus==='working')label.textContent='After current turn';
+  else if(liveDeadline!=null){
+    const seconds=Math.ceil((liveDeadline-performance.now())/1000);
+    label.textContent=seconds>0?'Next check in '+seconds+'s':'Next check due';
+  }
+}
+setInterval(renderLiveCountdown,250);
 const button=(text,fn,cls)=>{const b=el('button',text,cls);b.type='button';b.addEventListener('click',()=>Promise.resolve().then(fn).catch(error=>toast(error.message)));return b;};
 function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,6500);}
 async function api(path,body,selected=profile){const r=await fetch('/api/'+path+(body===undefined?(path.includes('?')?'&':'?')+'profile='+encodeURIComponent(selected):''),{method:body===undefined?'GET':'POST',headers:{'X-Glass-Reach-Dashboard':'1',...(body===undefined?{}:{'Content-Type':'application/json','X-CSRF-Token':csrf})},body:body===undefined?undefined:JSON.stringify({...body,profile:selected})});const j=await r.json();if(!r.ok)throw new Error(j.error||'Request failed');return j;}
@@ -83,7 +216,9 @@ function paragraph(parent,text,cls){parent.append(el('p',text,cls));}
 async function load(selected=profile){const r=await api('session',undefined,selected);if(profile!==selected)return;csrf=r.csrf;offline=false;data=r;checkStorySound(r);render();try{localStorage.setItem('gr-saved-'+profile,JSON.stringify({...r,csrf:undefined}));}catch{}}
 async function refresh(){if(busy||!data)return;const selected=profile;busy=true;$('refresh').disabled=true;try{const r=await api('refresh',{},selected);if(profile===selected){data=r;csrf=r.csrf;offline=false;checkStorySound(r);render();}}catch(e){offline=true;toast(e.message);renderConnection();}finally{busy=false;$('refresh').disabled=false;}}
 function renderConnection(){const s=state();$('connection').textContent=offline?'Offline · saved ledger':data?.demo?'Fictional preview':s.connection||'Not connected';$('connection').classList.toggle('live',s.connection==='Live'&&!offline);$('notice').hidden=!(offline||data?.demo||s.problem||s.connection==='Saved observation');$('notice').textContent=offline?'Connection lost. Saved information and your draft remain available. Reconnect before sending.':data?.demo?'FICTIONAL PREVIEW · All characters, replies, and actions in this view are simulated.':s.problem||'Showing saved observations. Sync to check the current situation.';}
-function render(){if(!data)return;const s=state(),p=person();renderConnection();$('auto').checked=data.profile.liveFeed!==false;
+function render(){if(!data)return;const s=state(),p=person();renderConnection();
+ if(Number.isFinite(data.liveNextAt))liveDeadline=performance.now()+Math.max(0,data.liveNextAt-data.serverTime);
+ renderLiveCountdown();renderScenes();$('auto').checked=data.profile.liveFeed!==false;
  change('profiles',data.profiles,()=>{$('character').replaceChildren(...data.profiles.map(p=>{const o=el('option',p.name);o.value=p.id;return o;}));});$('character').value=profile;
  $('scene-title').textContent=s.here?.name||'No observations yet';$('scene-description').textContent=s.here?.state?.description||'Connect this character to begin observing the world.';$('scene-weather').textContent=s.ambient?.weather||'';$('scene-time').textContent=s.ambient?.time_of_day||'';$('scene-day').textContent=s.t!=null?'DAY '+(Math.floor(s.t/86400)+1):'—';
  $('character-name').textContent=s.you?.name||data.profile.name;$('composer-character').textContent=data.profile.name;
@@ -115,7 +250,7 @@ function renderJournal(){const s=state();$('people').replaceChildren(...(s.knows
 }
 const movement=new Set(['arrived','left','moved','following','stayed','boarded','alighted']),combat=new Set(['checked','hit','missed','attacked','hurt','wounded','healed','downed','died','warded','rose','yielded']),items=new Set(['given','taken','put','dropped','found','shown','read','wrote','filled','drank','bound','released']);
 function eventText(e){const p=e.payload||{},who=name(p.by||p.who||p.entity||e.actor);if(p.text)return p.text;switch(e.kind){case'arrived':return who+' arrived'+(p.following?' following '+name(p.following):'')+'.';case'left':return who+' left'+(p.to?' for '+name(p.to):'')+'.';case'moved':return who+' moved to '+name(p.to)+'.';case'checked':return (p.skill||'Check')+': '+(p.roll!=null?'rolled '+p.roll+' + '+(p.mod||0)+' = ':'')+p.total+' vs '+p.dc+' · '+(p.success?'Passed':'Missed');case'given':return who+' gave '+name(p.item)+' to '+name(e.target)+'.';case'found':return who+' discovered '+name(p.thing)+'.';case'drank':return who+' drank'+(p.water!=null?' · water now '+p.water:'')+'.';case'hit':return who+' hit '+name(e.target)+' for '+(p.dmg??'?')+(Number.isFinite(p.hp)?' · '+p.hp+' HP remaining':'');case'progressed':return (p.skill||'Skill')+' progressed · '+(p.how||'');case'sweated':return 'Water cost: '+p.cost+' · remaining '+p.water;case'act':return (p.verb||'Action')+' '+(p.target?name(p.target):'');default:return e.kind.replaceAll('_',' ')+(p.why?' · '+p.why:'')+(p.name?' · '+p.name:'');}}
-function renderEvents(){const query=$('feed-search').value.toLowerCase(),filter=$('feed-filter').value,events=[...new Map([...(olderEvents.get(profile)||[]),...(data.events||[])].map(e=>[e.seq,e])).values()];const rows=storyRows(events,data.messages||[]).filter(r=>filter==='all'||r.category===filter||filter==='actions'&&['action','result'].includes(r.category)||filter==='player'&&r.message?.role==='user'||filter==='combat'&&combat.has(r.event?.kind)||filter==='items'&&items.has(r.event?.kind)).filter(r=>(r.event?eventText(r.event)+' '+name(r.event.actor):r.message.text).toLowerCase().includes(query));$('event-count').textContent=rows.length+' entries · newest first';change('feed',[rows.slice(-shownEvents),filter,query,state().knows,data.agentStatus,data.agentPreview],()=>{const feed=$('feed'),offset=feed.scrollTop,old=feed.scrollHeight;feed.replaceChildren(...rows.slice(-shownEvents).reverse().map(r=>{const card=el('article',null,'event story-entry '+r.category),head=el('div',null,'event-header');head.append(el('span',r.label));if(r.event){const e=r.event,id=e.payload?.by||e.payload?.who||e.payload?.entity||e.actor;card.dataset.seq=e.seq;if(id)head.append(button(name(id),()=>openEntity(id),'quiet'));head.append(el('time',e.t!=null?'Game day '+(Math.floor(e.t/86400)+1)+' · '+String(Math.floor(e.t%86400/3600)).padStart(2,'0')+':'+String(Math.floor(e.t%3600/60)).padStart(2,'0'):'#'+e.seq));card.append(head,el(e.kind==='say'?'blockquote':'div',eventText(e),'event-text'),details(e,'Recorded details'));}else{const m=r.message;head.append(el('time',new Date(m.time).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})));card.append(head,el('div',m.text,'event-text'));if(m.execution)card.append(details(m.execution,'Action record'));}return card;}));if(data.agentStatus==='working')feed.prepend(el('p',data.agentPreview||'Considering your next moment…','story-working'));if(offset>15)feed.scrollTop=offset+feed.scrollHeight-old;if(!rows.length&&data.agentStatus!=='working')empty(feed,'Your story, actions and inner thoughts will appear here.');});}
+function renderEvents(){if(!data)return;const query=$('feed-search').value.toLowerCase(),filter=[...$('feed-filter-options').querySelectorAll('input:checked')].map(input=>input.value),events=[...new Map([...(olderEvents.get(profile)||[]),...(data.events||[])].map(e=>[e.seq,e])).values()];const rows=storyRows(events,data.messages||[]).filter(r=>filter.includes(storyFilterType(r))).filter(r=>(r.event?eventText(r.event)+' '+name(r.event.actor):r.message.text).toLowerCase().includes(query));$('event-count').textContent=rows.length+' entries · newest first';change('feed',[rows.slice(-shownEvents),filter,query,state().knows,data.agentStatus,data.agentPreview],()=>{const feed=$('feed'),offset=feed.scrollTop,old=feed.scrollHeight;feed.replaceChildren(...rows.slice(-shownEvents).reverse().map(r=>{const card=el('article',null,'event story-entry '+r.category),head=el('div',null,'event-header');head.append(el('span',r.label));if(r.event){const e=r.event,id=e.payload?.by||e.payload?.who||e.payload?.entity||e.actor;card.dataset.seq=e.seq;if(id)head.append(button(name(id),()=>openEntity(id),'quiet'));head.append(el('time',e.t!=null?'Game day '+(Math.floor(e.t/86400)+1)+' · '+String(Math.floor(e.t%86400/3600)).padStart(2,'0')+':'+String(Math.floor(e.t%3600/60)).padStart(2,'0'):'#'+e.seq));card.append(head,el(e.kind==='say'?'blockquote':'div',eventText(e),'event-text'),details(e,'Recorded details'));}else{const m=r.message;head.append(el('time',new Date(m.time).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})));card.append(head,el('div',m.text,'event-text'));if(m.execution)card.append(details(m.execution,'Action record'));}return card;}));if(data.agentStatus==='working')feed.prepend(el('p',data.agentPreview||'Considering your next moment…','story-working'));if(offset>15)feed.scrollTop=offset+feed.scrollHeight-old;if(!rows.length&&data.agentStatus!=='working')empty(feed,filter.length===0?'All story types are hidden.':query||filter.length<storyFilterOptions.length?'No entries match your filters.':'Your story, actions and inner thoughts will appear here.');});}
 
 function renderActions(){const query=$('action-search').value.toLowerCase(),actions=(state().affordances||[]).filter(a=>(a.verb+' '+(a.target_name||'')).toLowerCase().includes(query));change('actions',[query,actions],()=>{$('actions').replaceChildren(...actions.map(a=>{const b=button(a.verb.replaceAll('_',' ')+' · '+(a.target_name||'Yourself'),()=>actionForm(a));b.append(el('small',a.ok?'Available':Object.keys(a.params||{}).length?'Review inputs · '+(a.reason||''):a.reason||'Unavailable'));return b;}));if(!actions.length)empty($('actions'),'No matching actions recorded.');});}
 
@@ -274,8 +409,8 @@ new ResizeObserver(()=>{document.documentElement.style.setProperty('--composer-h
 
 $('draft').oninput=saveDraft;$('draft').onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();send();}};$('send').onclick=send;
 for(const b of document.querySelectorAll('[data-prompt]'))b.onclick=()=>{setComposeMode('chat');$('draft').value=b.dataset.prompt;saveDraft();$('draft').focus();};
-$('refresh').onclick=refresh;$('quick-map').onclick=()=>{setPage('atlas');$('map-request').focus();};
-$('feed-filter').onchange=renderEvents;$('feed-search').oninput=renderEvents;$('action-search').oninput=renderActions;$('more-events').onclick=async()=>{const selected=profile;try{const all=[...(olderEvents.get(selected)||[]),...(data.events||[])],before=Math.min(...all.map(e=>e.seq));const rows=await api('history?before='+before,undefined,selected);olderEvents.set(selected,[...(olderEvents.get(selected)||[]),...rows]);if(profile===selected){shownEvents+=Math.max(100,rows.length);renderEvents();if(!rows.length)toast('All saved events are loaded.');}}catch(e){toast(e.message);}};
+$('refresh').onclick=refresh;$('quick-map').onclick=()=>{setPage('atlas');selectAtlasView(false);$('map-request').focus();};
+$('feed-filter-options').onchange=saveStoryFilters;$('feed-search').oninput=renderEvents;$('action-search').oninput=renderActions;$('more-events').onclick=async()=>{const selected=profile;try{const all=[...(olderEvents.get(selected)||[]),...(data.events||[])],before=Math.min(...all.map(e=>e.seq));const rows=await api('history?before='+before,undefined,selected);olderEvents.set(selected,[...(olderEvents.get(selected)||[]),...rows]);if(profile===selected){shownEvents+=Math.max(100,rows.length);renderEvents();if(!rows.length)toast('All saved events are loaded.');}}catch(e){toast(e.message);}};
 $('character').onchange=async()=>{clearTimeout(draftTimer);await api('local',{draft:$('draft').value}).catch(()=>{});profile=$('character').value;localStorage.setItem('gr-profile',profile);fingerprints.clear();settingsDirty=false;mapId=null;shownEvents=80;$('drawer').close();await load();$('draft').value=localStorage.getItem('gr-draft-'+profile)??data.draft??'';};
 $('map-generate').onclick=()=>sendAgent('Create a visual diagram map. Scope: '+$('map-scope').value+'. '+$('map-request').value,'atlas').then(()=>toast('Map requested. It will appear in your atlas.')).catch(e=>toast(e.message));
 $('map-observed').onclick=async()=>{try{const map=observedMap();await api('map',{map});await load();mapId=data.maps.at(-1)?.id;renderAtlas();toast('Observed connections saved.');}catch(e){toast(e.message);}};

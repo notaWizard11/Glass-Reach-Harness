@@ -1,6 +1,7 @@
 import { runGameTurn } from './game-turn.mjs';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -8,17 +9,23 @@ import { Store } from './store.mjs';
 import { Game, validateOperation } from './game.mjs';
 import { Agent } from './agent.mjs';
 import { prepareReadied, runReadied } from './readied.mjs';
-export async function startServer({demo=false,port=demo?47382:47381,dataDir,liveIntervalMs=5000}={}) {
+import { generateSceneImage } from './scene-images.mjs';
+export async function startServer({demo=false,port=demo?47382:47381,dataDir,liveIntervalMs=5000,imageGenerator=generateSceneImage}={}) {
  const store=await new Store(dataDir||fileURLToPath(new URL('../.glassreach-data/'+(demo?'demo':'live'),import.meta.url)),demo).init();
  const game=new Game(store,demo),agent=new Agent(store);await game.importLegacy();
  const csrf=randomBytes(24).toString('hex'),watchers=new Map(),liveProfiles=new Map();
  const savingReadied=new WeakSet();
+ const sceneRequests=new Set(),sceneDir=join(store.dir,'scenes');
+ let nextLiveAt=Date.now()+liveIntervalMs,liveChecking=null;
  const mobile=process.env.GLASS_REACH_MOBILE_ORIGIN?new URL(process.env.GLASS_REACH_MOBILE_ORIGIN):null,login=process.env.GLASS_REACH_MOBILE_LOGIN;
  if(mobile&&(mobile.protocol!=='https:'||!mobile.hostname.endsWith('.ts.net')||mobile.pathname!=='/'||!login))throw new Error('Private phone access requires an exact Tailscale HTTPS origin and login.');
  const assets={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
  async function body(req){let s='';for await(const chunk of req){s+=chunk;if(s.length>300000)throw new Error('Request is too large.');}return s?JSON.parse(s):{};}
  const json=(res,status,data)=>res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'}).end(JSON.stringify(data));
- const packet=id=>({...store.publicData(id),csrf,watchers:[...watchers.values()].filter(x=>x.profileId===id).map(({timer,...x})=>x)});
+ const packet=id=>({...store.publicData(id),csrf,
+   liveNextAt:nextLiveAt,liveChecking:liveChecking===id,serverTime:Date.now(),
+   sceneImageEnabled:!demo&&Boolean(process.env.OPENAI_API_KEY),sceneImageBusy:sceneRequests.has(id),
+   watchers:[...watchers.values()].filter(x=>x.profileId===id).map(({timer,...x})=>x)});
  async function runAgent(p,text,purpose='chat'){
    const c=store.character(p.id);if(c.agentStatus==='working')throw new Error('This character already has a response in progress.');
    const source={location:c.state?.here?.id,entity:p.entityId,cursor:c.state?.cursor};
@@ -77,6 +84,30 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      }
      if(route==='POST /api/local'){for(const key of ['draft','organization','notes'])if(b[key]!==undefined)c[key]=b[key];await store.save();return json(res,200,{ok:true});}
      if(route==='POST /api/map'){const m=b.map;if(!m||!Array.isArray(m.nodes)||m.nodes.length>100||!Array.isArray(m.edges))throw new Error('Invalid map.');c.maps.push({...m,id:randomUUID(),created:new Date().toISOString(),sourceCursor:c.state?.cursor,location:c.state?.here?.id});await store.save();return json(res,200,{ok:true});}
+     if(route==='POST /api/scene-image'){
+       const key=process.env.OPENAI_API_KEY;
+       if(demo||!key)throw new Error('Scene generation needs an OpenAI API key on the live dashboard server.');
+       if(sceneRequests.has(id))throw new Error('An image for this character is already generating.');
+       const observation=c.state,description=typeof b.description==='string'?b.description.trim():'';
+       if(!observation?.here || observation.you?.id!==p.entityId)throw new Error('Sync this character before requesting an image.');
+       if(description.length>2000)throw new Error('Keep scene instructions under 2,000 characters.');
+       sceneRequests.add(id);
+       try{
+         const png=await imageGenerator({key,description,observation});
+         const scene={id:randomUUID(),title:observation.here.name,description,created:new Date().toISOString()};
+         await mkdir(sceneDir,{recursive:true});
+         await writeFile(join(sceneDir,scene.id+'.png'),png,{flag:'wx'});
+         (c.sceneImages??=[]).push(scene);
+         try{await store.save();}catch(error){c.sceneImages.pop();throw error;}
+         return json(res,201,scene);
+       }finally{sceneRequests.delete(id);}
+     }
+     if(route==='GET /api/scene-image'){
+       const scene=c.sceneImages?.find(entry=>entry.id===url.searchParams.get('id'));
+       if(!scene||!/^[0-9a-f-]{36}$/.test(scene.id))return json(res,404,{error:'Scene image not found.'});
+       const png=await readFile(join(sceneDir,scene.id+'.png'));
+       return res.writeHead(200,{'Content-Type':'image/png'}).end(png);
+     }
      if(route==='POST /api/profiles'){
        if(!b.name?.trim())throw new Error('Give this character profile a name.');
        const pid=randomUUID(),profile={id:pid,name:b.name.trim(),entityId:b.entityId?.trim()||'',instructions:'',mode:'manual',credential:b.token?pid:p.credential};
@@ -155,14 +186,18 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
  const background=setInterval(async()=>{for(const p of store.data.profiles){const c=store.character(p.id);if(p.mode!=='suggest'||c.agentStatus==='working'||Date.now()-(c.lastSuggestedAt||0)<300000)continue;try{await game.refresh(p);if(c.state?.connection==='Saved observation')continue;if(c.lastSuggestedCursor===c.state?.cursor)continue;c.lastSuggestedCursor=c.state.cursor;c.lastSuggestedAt=Date.now();await runAgent(p,'Review the current situation and prepare up to three useful next actions for my approval. Do not repeat pending suggestions.','suggestions');}catch{}}},60000);background.unref();
  let liveBusy=false;
+ nextLiveAt=Date.now()+liveIntervalMs;
  const liveTimer=setInterval(async()=>{
+   nextLiveAt=Date.now()+liveIntervalMs;
    if(liveBusy)return;liveBusy=true;
    const active=new Set(liveProfiles.values());
    const armed=store.data.profiles.filter(p=>store.character(p.id).readied?.some(rule=>rule.status==='armed')).map(p=>p.id);
    try{for(const id of new Set([...active,...armed])){
      const p=store.profile(id),c=store.character(id);
      if(c.agentStatus!=='working' && (armed.includes(id) || p.liveFeed!==false)){
+       liveChecking=id;
        try{await game.refresh(p);}catch{/* Retry on the next interval. */}
+       finally{liveChecking=null;}
      }
      try{await runReadied({profile:p,character:c,store,execute,demo,saving:savingReadied});}catch{/* Leave any interrupted delivery unconfirmed. */}
    }}finally{liveBusy=false;}

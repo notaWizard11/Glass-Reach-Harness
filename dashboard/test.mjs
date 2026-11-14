@@ -123,3 +123,38 @@ test('readied actions edit, disarm and fire once in the background',async t=>{
  assert.equal(c.events.filter(event=>event.kind==='drank'&&event.seq>12).length,1);
  assert.equal(c.messages.filter(m=>m.text.startsWith('Readied action · complete')).length,2);
 });
+
+test('Atlas scene images save and are scoped to their character',async t=>{
+ const previousKey=process.env.OPENAI_API_KEY;
+ process.env.OPENAI_API_KEY='fixture-key';
+ t.after(()=>{if(previousKey===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previousKey;});
+ const dir=await mkdtemp(join(tmpdir(),'glass-reach-scene-'));
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPWQAAAAASUVORK5CYII=','base64');
+ const app=await startServer({dataDir:dir,port:0, imageGenerator:async({description,observation})=>{
+   assert.equal(description,'North arch');
+   assert.equal(observation.here.name,'The Gate Yard');
+   return png;
+ }});
+ t.after(()=>app.stop());
+ const profile=app.store.profile('aaron');
+ profile.entityId='demo-keeper';
+ app.store.character(profile.id).state=await app.game.demoState(profile);
+ app.store.data.profiles.push({...profile,id:'other',entityId:'other'});
+ const headers={'X-Glass-Reach-Dashboard':'1'};
+ const session=await (await fetch(app.url+'api/session',{headers})).json();
+ assert.equal(session.sceneImageEnabled,true);
+ assert.ok(session.liveNextAt>=session.serverTime);
+ const response=await fetch(app.url+'api/scene-image',{
+   method:'POST',headers:{...headers,'Content-Type':'application/json','X-CSRF-Token':session.csrf},
+   body:JSON.stringify({description:'North arch'}),
+ });
+ assert.equal(response.status,201);
+ const scene=await response.json();
+ const saved=await fetch(app.url+'api/scene-image?profile=aaron&id='+scene.id,{headers});
+ assert.equal(saved.headers.get('content-type'),'image/png');
+ assert.deepEqual(Buffer.from(await saved.arrayBuffer()),png);
+ const other=await fetch(app.url+'api/scene-image?profile=other&id='+scene.id,{headers});
+ assert.equal(other.status,404);
+ const ledger=JSON.parse(await readFile(join(dir,'ledger.json'),'utf8'));
+ assert.deepEqual(ledger.characters.aaron.sceneImages,[scene]);
+});

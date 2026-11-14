@@ -16,3 +16,13 @@
 .readied-card>.badge{justify-self:start}
 .readied-card>.inline{flex-wrap:wrap}
 #watch-page-host #watch-controls{max-height:none;overflow:visible}
+
+.feed-filters{max-width:100%}
+.feed-filters summary{cursor:pointer;padding:6px 8px}
+#feed-filter-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 12px;border:0;margin:0;padding:4px 8px}
+#feed-filter-options label{margin:0;font-size:12px}
+.feed-filters>.inline{padding:4px 8px 8px}
+.chronicle>.panel-heading>.inline{flex-wrap:wrap;justify-content:flex-end}
+#live-countdown{white-space:nowrap}
+#scene-preview img{display:block;width:100%;height:auto;border-radius:5px}
+#scene-list .map-entry{width:100%;margin-top:6px}

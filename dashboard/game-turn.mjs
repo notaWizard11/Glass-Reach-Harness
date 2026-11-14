@@ -29,7 +29,7 @@ export async function runGameTurn({profile,character,text,game,plan,execute,save
     }
     const evidence={step:step+1,title:next.title,op:next.op,args,...result};results.push(evidence);
     // Save evidence before asking the model what comes next. Never retry on restart.
-    character.messages.push({id:randomUUID(),role:'notice',mode:'game',text:next.title+' — '+result.status+(result.result?.reason?' · '+result.result.reason:result.message?' · '+result.message:''),time:new Date().toISOString(),execution:evidence});
+    character.messages.push({id:randomUUID(),timelineSeq:character.state?.cursor||0,role:'notice',mode:'game',text:next.title+' — '+result.status+(result.result?.reason?' · '+result.result.reason:result.message?' · '+result.message:''),time:new Date().toISOString(),execution:evidence});
     await save();
     if(result.status!=='complete')return 'Stopped: '+(result.result?.reason||result.message||result.status)+'. Check the event record before retrying.';
   }

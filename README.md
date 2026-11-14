@@ -51,7 +51,7 @@ This dashboard starts its own Codex conversation; you do not need to open a part
 
 ### 6. Play
 
-Use **Talk to Codex** for questions and planning. Switch to **Act in game**, describe what your character does or says, and click **Act** to carry it out. Replies appear under **Your companion**; game events appear in **The unfolding story**. Prompt buttons above the box are shortcuts.
+Use **Inner thoughts** for questions and planning. Switch to **Act in game**, describe what your character does or says, and click **Act** to carry it out. Your messages, inner thoughts, narrated outcomes and game events share **The unfolding story**. Prompt buttons above the box are shortcuts.
 
 Next time, open the same launcher and use the same folder. Your credentials and records are saved locally. Never share your token or the `.glassreach-data` folder.
 
@@ -59,7 +59,7 @@ Next time, open the same launcher and use the same folder. Your credentials and 
 
 ## Message modes
 
-- **Talk to Codex:** questions, discussion and planning. It never executes game actions. Proposed actions can be reviewed separately.
+- **Talk to Codex:** private questions, discussion and planning in your character’s inner voice. It never executes game actions. Proposed actions can be reviewed separately.
 - **Act in game:** describe actions and dialogue naturally. Sending authorizes the requested sequence. The agent chooses one step at a time, using fresh observations and previous results. It can inspect objects between actions. It stops on a refusal, uncertain delivery, Stop, or a 12-step limit.
 
 Stop prevents subsequent steps; it cannot undo an action already sent. Interrupted or uncertain actions are never automatically retried. Unsolicited and autopilot suggestions always remain approval-only.
@@ -67,13 +67,13 @@ Stop prevents subsequent steps; it cannot undo an action already sent. Interrupt
 ## Features
 
 - Live dialogue, movement, combat, check and item events, with searchable saved history.
-- Connections centered on the current location, including branches and loops.
+- Connections in Atlas centered on the current location, including branches and loops.
 - Saved schematic atlas diagrams and SVG export; these are not authoritative geographical maps.
-- Reported character properties, skills, conditions and progression.
+- Collapsible Play stats and inventory; full properties, skills, conditions and progression in Character.
 - Ready/backpack organization, item details and contextual actions. Grouping is personal organization, not an engine equipment command.
 - Relationships, memories, goals, documents and local notes.
 - Versioned master prompt, conversation reset/archive, character exports and persistent drafts.
-- Arrival/reply/water/dusk watches while the server is running.
+- A Watch & automation composer tab for arrival/reply/water/dusk watches and approval-only background suggestions.
 - Responsive layout and an installable browser shell where supported.
 
 ## Local data and privacy

@@ -1,6 +1,56 @@
 import {storyRows} from './timeline.mjs';
 'use strict';
 const $=id=>document.getElementById(id),el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
+const soundToggle=$('story-sound');
+soundToggle.checked=localStorage.getItem('gr-story-sound')==='on';
+let storyAudio, soundProfile, lastEventSeq=0, heardMessages=new Set();
+
+async function enableStoryAudio(){
+  if(!soundToggle.checked)return;
+  try{
+    storyAudio??=new AudioContext();
+    if(storyAudio.state!=='running')await storyAudio.resume();
+  }catch{/* The browser may block audio until the page receives a gesture. */}
+}
+function playStoryChime(){
+  if(!soundToggle.checked||storyAudio?.state!=='running')return;
+  const start=storyAudio.currentTime;
+  for(const [index,frequency] of [660,880].entries()){
+    const at=start+index*0.09;
+    const tone=storyAudio.createOscillator(),gain=storyAudio.createGain();
+    tone.frequency.value=frequency;
+    gain.gain.setValueAtTime(0.001,at);
+    gain.gain.exponentialRampToValueAtTime(0.06,at+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001,at+0.18);
+    tone.connect(gain).connect(storyAudio.destination);
+    tone.start(at);tone.stop(at+0.19);
+  }
+}
+soundToggle.onchange=async()=>{
+  localStorage.setItem('gr-story-sound',soundToggle.checked?'on':'off');
+  if(soundToggle.checked){await enableStoryAudio();playStoryChime();}
+};
+document.addEventListener('click',enableStoryAudio);
+document.addEventListener('keydown',enableStoryAudio);
+
+function checkStorySound(data){
+  const sameCharacter=soundProfile===data.profile.id;
+  if(!sameCharacter){
+    soundProfile=data.profile.id;
+    lastEventSeq=0;
+    heardMessages=new Set();
+  }
+  let hasNewEntry=false;
+  for(const event of data.events||[]){
+    if(event.seq>lastEventSeq){lastEventSeq=event.seq;hasNewEntry=true;}
+  }
+  for(const message of data.messages||[]){
+    if(message.role==='user'||!message.id||heardMessages.has(message.id))continue;
+    heardMessages.add(message.id);
+    hasNewEntry=true;
+  }
+  if(sameCharacter&&hasNewEntry)playStoryChime();
+}
 let data=null,profile=localStorage.getItem('gr-profile')||'aaron',csrf='',page=localStorage.getItem('gr-page')||'play',offline=false,busy=false,shownEvents=80,mapId=null,settingsDirty=false,draftTimer,toastTimer;
 let composeMode='chat',modelsLoaded=false,modelsLoading=false;
 const modelSelectIds=['model','model-chat','model-game','model-atlas','model-suggestions'];
@@ -30,8 +80,8 @@ function openDialog(title){$('dialog-title').textContent=title;$('dialog-content
 $('dialog-close').onclick=()=>$('drawer').close();
 function details(value,label='Details'){const d=el('details');d.append(el('summary',label),el('pre',JSON.stringify(value,null,2)));return d;}
 function paragraph(parent,text,cls){parent.append(el('p',text,cls));}
-async function load(selected=profile){const r=await api('session',undefined,selected);if(profile!==selected)return;csrf=r.csrf;offline=false;data=r;render();try{localStorage.setItem('gr-saved-'+profile,JSON.stringify({...r,csrf:undefined}));}catch{}}
-async function refresh(){if(busy||!data)return;const selected=profile;busy=true;$('refresh').disabled=true;try{const r=await api('refresh',{},selected);if(profile===selected){data=r;csrf=r.csrf;offline=false;render();}}catch(e){offline=true;toast(e.message);renderConnection();}finally{busy=false;$('refresh').disabled=false;}}
+async function load(selected=profile){const r=await api('session',undefined,selected);if(profile!==selected)return;csrf=r.csrf;offline=false;data=r;checkStorySound(r);render();try{localStorage.setItem('gr-saved-'+profile,JSON.stringify({...r,csrf:undefined}));}catch{}}
+async function refresh(){if(busy||!data)return;const selected=profile;busy=true;$('refresh').disabled=true;try{const r=await api('refresh',{},selected);if(profile===selected){data=r;csrf=r.csrf;offline=false;checkStorySound(r);render();}}catch(e){offline=true;toast(e.message);renderConnection();}finally{busy=false;$('refresh').disabled=false;}}
 function renderConnection(){const s=state();$('connection').textContent=offline?'Offline · saved ledger':data?.demo?'Fictional preview':s.connection||'Not connected';$('connection').classList.toggle('live',s.connection==='Live'&&!offline);$('notice').hidden=!(offline||data?.demo||s.problem||s.connection==='Saved observation');$('notice').textContent=offline?'Connection lost. Saved information and your draft remain available. Reconnect before sending.':data?.demo?'FICTIONAL PREVIEW · All characters, replies, and actions in this view are simulated.':s.problem||'Showing saved observations. Sync to check the current situation.';}
 function render(){if(!data)return;const s=state(),p=person();renderConnection();$('auto').checked=data.profile.liveFeed!==false;
  change('profiles',data.profiles,()=>{$('character').replaceChildren(...data.profiles.map(p=>{const o=el('option',p.name);o.value=p.id;return o;}));});$('character').value=profile;

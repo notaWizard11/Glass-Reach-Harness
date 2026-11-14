@@ -39,13 +39,13 @@ Click **+ Character** at the top. Fill in:
 | Existing character ID | Your Glass Reach character ID |
 | Separate game token | Your own Glass Reach access token — required for your first connection, even though the label says optional |
 
-Click **Save profile**, then **Agent settings → Reconnect selected character → Confirm action**. Click **Sync**; your character and location should appear with a **Live** status. The initial empty **Player** profile can be ignored.
+Click **Save profile**, then **Settings → Reconnect selected character → Confirm action**. Click **Sync**; your character and location should appear with a **Live** status. The initial empty **Player** profile can be ignored.
 
-Want a new character instead? Leave the ID blank when saving your profile, then use **Browse seats & templates** in Agent settings. Creation depends on your game permissions.
+Want a new character instead? Leave the ID blank when saving your profile, then use **Browse seats & templates** in Settings. Creation depends on your game permissions.
 
 ### 5. Connect Codex
 
-In **Agent settings**, click **Connect / check Codex**. Wait for **Codex connected**. You can leave the model at **Account default**. Optionally edit the master prompt and click **Save preferences**.
+In **Settings**, click **Connect / check Codex**. Wait for **Codex connected**. You can leave the model at **Account default**. Optionally edit the master prompt and click **Save preferences**.
 
 This dashboard starts its own Codex conversation; you do not need to open a particular desktop chat.
 
@@ -102,7 +102,7 @@ This is an independent companion project, not an official game or OpenAI distrib
 
 The story feed checks the game every five seconds while Live is enabled, including when the browser tab is in the background. Keep the dashboard server running and the computer awake. Turning off Live pauses these checks for that character. Browsers may delay background rendering; returning to the tab immediately loads the collected updates.
 
-Agent settings loads the models available to your signed-in Codex account automatically. Choose a General model and optional overrides for Inner thoughts, Game actions & narration, Atlas diagrams, and Automated suggestions; then select Save model choices. Empty overrides inherit the general model. Account default uses your Codex configuration.
+Settings loads the models available to your signed-in Codex account automatically. Choose a General model and optional overrides for Inner thoughts, Game actions & narration, Atlas diagrams, and Automated suggestions; then select Save model choices. Empty overrides inherit the general model. Account default uses your Codex configuration.
 
 Open **Watch & automation** from the navigation or the Play composer. Choose **Ready an action**, select a trigger and one exact game action or line of dialogue, then review and approve it. Up to 12 actions per character can wait at once. Edit and approve an armed rule again to replace it, or disarm it. The game must still be connected to that character and the character must be in the scene where you armed the command. Each rule expires at the time you choose. The dashboard server checks rules in the background even with Live off. The story feed and rule list show what happened.
 

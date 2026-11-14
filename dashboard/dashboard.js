@@ -16,7 +16,14 @@ function person(){return state().you?.state||{};}
 function name(id){if(!id)return 'The scene';const s=state();return [s.you,s.here,...(s.present||[]),...(s.holding||[]),...(s.places||[]),...(s.knows||[]).map(x=>({id:x.who,...x}))].find(x=>x?.id===id)?.name||'Someone / something unrecorded';}
 function entities(){const s=state();return [s.you,s.here,...(s.holding||[]),...(s.present||[]),...(s.places||[])].filter(Boolean);}
 function empty(target,text){target.replaceChildren(el('p',text,'empty'));}
-function setPage(next){if(!$('page-'+next))next='play';page=next;localStorage.setItem('gr-page',next);for(const n of document.querySelectorAll('.page'))n.hidden=n.id!=='page-'+next;for(const b of document.querySelectorAll('[data-page]')){b.classList.toggle('selected',b.dataset.page===next);b.setAttribute('aria-current',b.dataset.page===next?'page':'false');}if(next==='atlas')renderAtlas();if(next==='settings'&&data&&!modelsLoaded)connectModels();}
+function setPage(next){if(!$('page-'+next))next='play';page=next;localStorage.setItem('gr-page',next);for(const n of document.querySelectorAll('.page'))n.hidden=n.id!=='page-'+next;for(const b of document.querySelectorAll('[data-page]')){b.classList.toggle('selected',b.dataset.page===next);b.setAttribute('aria-current',b.dataset.page===next?'page':'false');}placeWatchControls();if(next==='atlas')renderAtlas();if(next==='settings'&&data&&!modelsLoaded)connectModels();}
+const watchComposer=$('watch-controls').parentElement;
+function placeWatchControls(){
+  const onPage=page==='watch';
+  (onPage?$('watch-page-host'):watchComposer).append($('watch-controls'));
+  $('watch-controls').hidden=!onPage&&composeMode!=='watch';
+  $('open-watch-page').hidden=onPage;
+}
 for(const b of document.querySelectorAll('[data-page]'))b.addEventListener('click',()=>setPage(b.dataset.page));
 for(const b of document.querySelectorAll('[data-goto]'))b.addEventListener('click',()=>setPage(b.dataset.goto));
 function openDialog(title){$('dialog-title').textContent=title;$('dialog-content').replaceChildren();if(!$('drawer').open)$('drawer').showModal();return $('dialog-content');}
@@ -35,7 +42,7 @@ function render(){if(!data)return;const s=state(),p=person();renderConnection();
  change('nearby',s.present,()=>{const people=(s.present||[]).filter(x=>['person','agent','fighter','hireling','drifter'].includes(x.type)||x.state?.hp!=null||x.state?.vigor!=null);$('nearby-count').textContent=people.length;$('nearby').replaceChildren(...people.map(x=>entityRow(x)));$('features').replaceChildren(...(s.present||[]).filter(x=>!people.includes(x)).map(x=>entityRow(x)));if(!people.length)empty($('nearby'),'No characters recorded nearby.');});
  change('inventory',[s.holding,data.organization],renderInventory);
  change('journal',[s.knows,s.goals,p.memory,data.notes,s.places,s.holding],renderJournal);
- renderEvents();renderActions();renderSuggestions();
+ renderEvents();renderActions();renderSuggestions();renderReadied();
  change('maps',data.maps,()=>{$('map-list').replaceChildren(...[...(data.maps||[])].reverse().map(m=>{const b=button(m.title,()=>{mapId=m.id;renderAtlas();},'map-entry');b.append(el('small',new Date(m.created).toLocaleString()));return b;}));if(page==='atlas')renderAtlas();});
  change('watches',data.watchers,()=>{$('watches').replaceChildren(...(data.watchers||[]).map(w=>{const row=el('div',w.kind+' '+w.value+' · '+w.status,'note');if(w.error)row.append(el('small',w.error));row.append(button('Remove',async()=>{await api('watch',{stop:w.id});await load();},'quiet'));return row;}));});
  $('agent-status').textContent=data.agentStatus==='working'?'Thinking…':data.agentStatus==='error'?'Check reply':'Ready';$('stop-agent').hidden=data.agentStatus!=='working';$('watch-stop-agent').hidden=data.agentStatus!=='working';$('control-mode').value=data.profile.mode||'manual';
@@ -70,6 +77,131 @@ function renderAtlas(){if(!data)return;const map=(data.maps||[]).find(m=>m.id===
 function field(parent,label,type='text',value='',options){const l=el('label',label);let input;if(options){input=el('select');for(const [v,t]of options){const o=el('option',t);o.value=v;input.append(o);}}else input=el(type==='textarea'?'textarea':'input');if(type!=='textarea'&&!options)input.type=type;input.value=value??'';l.append(input);parent.append(l);return input;}
 function actionForm(a){const root=openDialog(a.verb.replaceAll('_',' ')+' · '+(a.target_name||'Yourself'));paragraph(root,a.doc||'Review the action before sending it.');if(a.reason)paragraph(root,'Last observation: '+a.reason,'field-help');const params={},inputs={};for(const [key,doc]of Object.entries(a.params||{})){const opts=key==='item'? [['','Choose an item…'],...(state().holding||[]).map(i=>[i.id,i.name])]:null;inputs[key]=field(root,key+' — '+(typeof doc==='string'?doc:JSON.stringify(doc)),['text','offer','word'].includes(key)?'textarea':'text','',opts);}const help=el('p','This performs a game action as '+data.profile.name+'.','field-help');root.append(help,button('Send action',async()=>{for(const [k,n]of Object.entries(inputs))if(n.value.trim())params[k]=parseValue(k,n.value);await perform('act',{verb:a.verb,...(a.target?{target:a.target}:{}),params});},'primary'));}
 function parseValue(k,v){if(['count','dc','priority','reach'].includes(k)&&Number.isFinite(Number(v)))return Number(v);if(['slow','sleep'].includes(k)&&['true','false'].includes(v))return v==='true';return v;}
+
+const triggerChoices=[['arrival','A character arrives'],['reply','A character speaks to me'],['water','My water is 3 or lower'],['dusk','It is dusk']];
+const readiedStatuses={armed:'Armed',executing:'Sending',complete:'Fired',refused:'Refused',expired:'Expired',cancelled:'Disarmed',uncertain:'Delivery uncertain'};
+function triggerText(trigger){
+  return triggerChoices.find(([kind])=>kind===trigger.kind)?.[1]+(trigger.person?' · '+name(trigger.person):'')
+    +(trigger.phrase?' · contains “'+trigger.phrase+'”':'');
+}
+function commandText(op,args){
+  if(op==='say')return 'Say “'+args.text+'” '+(args.to?'to '+name(args.to):'to everyone nearby');
+  const params=Object.entries(args.params||{}).map(([key,value])=>key+' = '+JSON.stringify(value));
+  return args.verb.replaceAll('_',' ')+(args.target?' · '+name(args.target):'')+(params.length?' · '+params.join(', '):'');
+}
+function renderReadied(){
+  const rules=data.readied||[];
+  change('readied',[profile,rules,state().knows,state().present],()=>{
+    const sorted=[...rules].reverse().sort((a,b)=>Number(['armed','executing'].includes(b.status))-Number(['armed','executing'].includes(a.status)));
+    $('readied-actions').replaceChildren(el('h3','Readied actions'),...sorted.map(rule=>{
+      const card=el('article',null,'note readied-card');
+      card.append(el('span',readiedStatuses[rule.status]||rule.status,'badge'),el('strong',commandText(rule.op,rule.args)),
+        el('span',triggerText(rule.trigger)+' · '+rule.locationName),
+        el('small',rule.outcome||'Expires '+new Date(rule.expires).toLocaleString()));
+      if(rule.status==='armed'){
+        const selected=profile;
+        const controls=el('div',null,'inline');
+        controls.append(button('Edit & review',()=>readiedForm(rule)),button('Disarm',async()=>{
+          await api('readied',{id:rule.id,revision:rule.revision,disarm:true},selected);
+          await load(selected);
+        },'quiet'));
+        card.append(controls);
+      }
+      return card;
+    }));
+    if(!rules.length)paragraph($('readied-actions'),'No readied actions yet.','empty');
+  });
+}
+function readiedForm(rule,previous){
+  const s=state(),selected=profile;
+  if(!s.here||!s.you){toast('Sync or reconnect this character first.');return;}
+  const root=openDialog(rule?'Edit readied action':'Ready an action');
+  const draft=previous||rule||{};
+  const people=[...new Map([...(s.knows||[]).map(person=>[person.who||person.id,person.name]),
+    ...(s.present||[]).filter(person=>['person','creature','npc','animal'].includes(person.type)).map(person=>[person.id,person.name])].filter(([id])=>id&&id!==s.you.id)).entries()];
+  for(const id of [draft.trigger?.person,draft.args?.to]){
+    if(id&&!people.some(([value])=>value===id))people.push([id,name(id)]);
+  }
+  const kind=field(root,'Trigger','text',draft.trigger?.kind||'arrival',triggerChoices);
+  const person=field(root,'Character','text',draft.trigger?.person,[['','Choose a character…'],...people]);
+  const phrase=field(root,'Phrase to match (optional)','text',draft.trigger?.phrase);
+  phrase.maxLength=200;
+  const op=field(root,'When it triggers','text',draft.op||'say',[['say','Say an exact line'],['act','Perform a game action']]);
+  const text=field(root,'Words to say','textarea',draft.op==='say'?draft.args.text:'');
+  const to=field(root,'Addressed to','text',draft.args?.to,[['','Everyone nearby'],...people]);
+  const options=[...(s.affordances||[])];
+  const key=a=>JSON.stringify([a.verb,a.target||'']);
+  if(draft.op==='act'&&!options.some(a=>key(a)===key(draft.args))){
+    options.push({verb:draft.args.verb,target:draft.args.target,target_name:name(draft.args.target),params:draft.args.params});
+  }
+  const action=field(root,'Game action','text',draft.op==='act'?key(draft.args):'',
+    [['','Choose an action…'],...options.map(a=>[key(a),a.verb.replaceAll('_',' ')+' · '+(a.target_name||'Yourself')])]);
+  const parameters=el('div');
+  root.append(parameters);
+  let inputs=[];
+  function showParameters(useDraft=false){
+    parameters.replaceChildren();
+    inputs=[];
+    const choice=options.find(a=>key(a)===action.value);
+    const saved=useDraft&&draft.op==='act'?draft.args.params||{}:{};
+    for(const [k,hint] of Object.entries({...choice?.params,...saved})){
+      const items=k==='item'?[['','Choose an item…'],...(s.holding||[]).map(i=>[i.id,i.name])]:null;
+      if(items&&saved[k]&&!items.some(([id])=>id===saved[k]))items.push([saved[k],name(saved[k])]);
+      const value=saved[k];
+      const input=field(parameters,k,'text',typeof value==='object'?JSON.stringify(value):value,items);
+      if(choice?.params?.[k]&&typeof hint==='string')input.placeholder=choice.params[k];
+      inputs.push({k,input,json:typeof value==='object'});
+    }
+  }
+  const minutes=field(root,'Keep ready for','text',String(draft.minutes||30),
+    [5,15,30,60,120].map(n=>[String(n),n+' minutes']));
+  function toggle(){
+    person.parentElement.hidden=!['arrival','reply'].includes(kind.value);
+    phrase.parentElement.hidden=kind.value!=='reply';
+    for(const el of [text,to])el.parentElement.hidden=op.value!=='say';
+    action.parentElement.hidden=parameters.hidden=op.value!=='act';
+  }
+  kind.onchange=op.onchange=toggle;
+  action.onchange=()=>showParameters();
+  showParameters(true);toggle();
+  root.append(button('Review command',()=>{
+    if(['arrival','reply'].includes(kind.value)&&!person.value)throw new Error('Choose a character.');
+    const trigger={kind:kind.value,...(!person.parentElement.hidden?{person:person.value}:{}),
+      ...(!phrase.parentElement.hidden?{phrase:phrase.value.trim()}: {})};
+    let args;
+    if(op.value==='say'){
+      if(!text.value.trim())throw new Error('Enter the line to say.');
+      args={text:text.value,...(to.value?{to:to.value}:{})};
+    }else{
+      const choice=options.find(a=>key(a)===action.value);
+      if(!choice)throw new Error('Choose a game action.');
+      const params={};
+      for(const {k,input,json} of inputs)if(input.value.trim())params[k]=json?JSON.parse(input.value):parseValue(k,input.value);
+      args={verb:choice.verb,...(choice.target?{target:choice.target}:{}),params};
+    }
+    const approval={trigger,op:op.value,args,minutes:Number(minutes.value),approvalId:crypto.randomUUID(),
+      entity:s.you.id,world:s.world,location:s.here.id,...(rule?{id:rule.id,revision:rule.revision}:{})};
+    const review=openDialog('Approve readied action');
+    paragraph(review,triggerText(trigger));
+    paragraph(review,commandText(approval.op,args),'review');
+    review.append(details(args,'Exact command details'));
+    paragraph(review,'Fire once as '+s.you.name+' at '+s.here.name+' within '+approval.minutes+' minutes. Water and dusk triggers can fire immediately if already true.');
+    if(rule)paragraph(review,'The current version stays armed until the edit is approved.');
+    review.append(button('Back',()=>readiedForm(rule,approval)));
+    const approve=button(rule?'Approve & update':'Approve & arm',async()=>{
+      approve.disabled=true;
+      try{
+        await api('readied',approval,selected);
+        $('drawer').close();
+        toast('Readied action armed.');
+        await load(selected);
+      }finally{approve.disabled=false;}
+    },'primary');
+    review.append(approve);
+  },'primary'));
+}
+$('readied-add').onclick=()=>readiedForm();
+$('open-watch-page').onclick=()=>setPage('watch');
 async function perform(op,args,suggestionId){const selected=profile,requestId=crypto.randomUUID(),btns=[...$('dialog-content').querySelectorAll('button')];let confirmed=false,uncertain=false;btns.forEach(b=>b.disabled=true);try{const r=await api(suggestionId?'suggestion':'action',suggestionId?{id:suggestionId,args}:{op,args,requestId},selected);uncertain=['uncertain','pending'].includes(r.status);if(r.status!=='complete'){const message=r.result?.reason||r.message||r.status;toast(message);paragraph($('dialog-content'),message,'danger');}else{confirmed=true;$('drawer').close();toast(data.demo?'Demonstration action recorded.':'Game confirmed the action.');}await load(selected);}catch(e){uncertain=true;toast(e.message);paragraph($('dialog-content'),e.message,'danger');}finally{btns.forEach(b=>b.disabled=uncertain);if(uncertain){const warning='Delivery could not be confirmed. Sync and check the event record before submitting another action.';toast(warning);$('send-status').textContent=warning;}}return confirmed;}
 
 function genericAction(op,args,title,suggestionId){const root=openDialog(title||'Review game action');paragraph(root,'Character: '+data.profile.name+'. Review the details before sending.');const inputs=[],labels={text:op==='say'?'Words to say':'Text',to:'Addressed to (others nearby can hear)',target:'Target',verb:'Action',why:'Reason',priority:'Priority',entity:'Character',status:'Goal status',item:'Item',count:'Quantity'};function add(k,v,parentKey){let options;if(['to','target','entity','item'].includes(k)){options=[...new Map(entities().map(x=>[x.id,[x.id,x.name]])).values()];if(v&&!options.some(x=>x[0]===v))options.push([v,name(v)]);if(k==='to')options.unshift(['','Everyone nearby']);}const n=field(root,labels[k]||k,typeof v==='object'||['text','description','answer','why'].includes(k)?'textarea':'text',typeof v==='object'?JSON.stringify(v,null,2):v,options);inputs.push({k,n,parentKey,json:typeof v==='object'});}for(const [k,v]of Object.entries(args)){if(k==='params'&&v&&typeof v==='object'){for(const [pk,pv]of Object.entries(v))add(pk,pv,'params');}else add(k,v);}root.append(button(suggestionId?'Approve & execute':'Confirm action',async()=>{const edited={};for(const {k,n,parentKey,json}of inputs){const value=json?JSON.parse(n.value):parseValue(k,n.value);if(parentKey)(edited[parentKey]??={})[k]=value;else if(value!==''||k!=='to')edited[k]=value;}if(args.params&&!edited.params)edited.params={};await perform(op,edited,suggestionId);},'primary'));}
@@ -84,7 +216,7 @@ async function sendAgent(text,purpose,mode='chat'){if(offline)throw new Error('R
 async function send(){const text=$('draft').value.trim();if(!text||composeMode==='watch')return;const selected=profile;$('send').disabled=true;try{await sendAgent(text,undefined,composeMode);if(profile===selected&&$('draft').value.trim()===text){$('draft').value='';saveDraft();}$('send-status').textContent='Message sent.';}catch(e){toast(e.message);$('send-status').textContent=e.message;}finally{$('send').disabled=false;}}
 
 function saveDraft(){const text=$('draft').value,selected=profile;localStorage.setItem('gr-draft-'+selected,text);clearTimeout(draftTimer);draftTimer=setTimeout(()=>api('local',{draft:text},selected).catch(()=>{}),500);}
-function setComposeMode(mode){composeMode=mode;for(const m of ['chat','game','watch'])$('mode-'+m).setAttribute('aria-pressed',String(mode===m));$('message-controls').hidden=mode==='watch';$('watch-controls').hidden=mode!=='watch';$('composer-help').textContent=mode==='game'?'Describe your actions or dialogue. The world responds; Stop pauses before the next step.':'Explore possibilities, ideas and questions. Inner thoughts do not act in the world.';$('draft').placeholder=mode==='game'?'What does your character do or say?':'Think it through…';$('send').textContent=mode==='game'?'Act ↗':'Reflect ↗';}
+function setComposeMode(mode){composeMode=mode;for(const m of ['chat','game','watch'])$('mode-'+m).setAttribute('aria-pressed',String(mode===m));$('message-controls').hidden=mode==='watch';placeWatchControls();$('composer-help').textContent=mode==='game'?'Describe your actions or dialogue. The world responds; Stop pauses before the next step.':'Explore possibilities, ideas and questions. Inner thoughts do not act in the world.';$('draft').placeholder=mode==='game'?'What does your character do or say?':'Think it through…';$('send').textContent=mode==='game'?'Act ↗':'Reflect ↗';}
 $('mode-chat').onclick=()=>setComposeMode('chat');$('mode-game').onclick=()=>setComposeMode('game');$('mode-watch').onclick=()=>setComposeMode('watch');
 $('watch-kind').onchange=()=>{$('watch-person-label').hidden=['water','dusk'].includes($('watch-kind').value);};
 for(const id of ['play-stats','play-inventory']){const panel=$(id);panel.open=localStorage.getItem('gr-'+id)!=='closed';panel.addEventListener('toggle',()=>localStorage.setItem('gr-'+id,panel.open?'open':'closed'));}

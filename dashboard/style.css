@@ -11,3 +11,8 @@
 @media(max-width:1000px){.streamlined-play{grid-template-columns:minmax(0,1fr) 250px}.streamlined-play>.play-sidebar>.panel{width:100%!important}}
 @media(max-width:720px){.streamlined-play{display:flex;flex-direction:column}.streamlined-play>.center-column,.streamlined-play>.play-sidebar{width:100%}.story-feed{height:58vh;min-height:320px}.watch-form{gap:8px}.watch-form label{min-width:110px}.compose-mode button{font-size:11px;padding:5px 8px}}
 .streamlined-play>.play-sidebar{grid-column:auto!important}
+
+.readied-card{display:grid;gap:5px;overflow-wrap:anywhere}
+.readied-card>.badge{justify-self:start}
+.readied-card>.inline{flex-wrap:wrap}
+#watch-page-host #watch-controls{max-height:none;overflow:visible}

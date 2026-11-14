@@ -7,10 +7,12 @@ import { fileURLToPath } from 'node:url';
 import { Store } from './store.mjs';
 import { Game, validateOperation } from './game.mjs';
 import { Agent } from './agent.mjs';
+import { prepareReadied, runReadied } from './readied.mjs';
 export async function startServer({demo=false,port=demo?47382:47381,dataDir,liveIntervalMs=5000}={}) {
  const store=await new Store(dataDir||fileURLToPath(new URL('../.glassreach-data/'+(demo?'demo':'live'),import.meta.url)),demo).init();
  const game=new Game(store,demo),agent=new Agent(store);await game.importLegacy();
  const csrf=randomBytes(24).toString('hex'),watchers=new Map(),liveProfiles=new Map();
+ const savingReadied=new WeakSet();
  const mobile=process.env.GLASS_REACH_MOBILE_ORIGIN?new URL(process.env.GLASS_REACH_MOBILE_ORIGIN):null,login=process.env.GLASS_REACH_MOBILE_LOGIN;
  if(mobile&&(mobile.protocol!=='https:'||!mobile.hostname.endsWith('.ts.net')||mobile.pathname!=='/'||!login))throw new Error('Private phone access requires an exact Tailscale HTTPS origin and login.');
  const assets={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
@@ -36,14 +38,14 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      c.agentStatus='idle';
    }catch(e){c.agentStatus='error';c.messages.push({id:randomUUID(),role:'error',text:e.message,time:new Date().toISOString()});}finally{c.activeThread=null;c.agentPreview='';await store.save();}})().catch(()=>{c.agentStatus='error';c.messages.push({id:randomUUID(),role:'error',text:'The local record could not be saved. Check folder access before continuing.',time:new Date().toISOString()});});
  }
- async function execute(p,op,args,requestId){
+ async function execute(p,op,args,requestId,guard){
    validateOperation(op,args);const c=store.character(p.id);
    if(op==='join'&&args.entity!==undefined&&args.entity!==p.entityId)throw new Error('Reconnect only the character assigned to this profile.');
    if(op==='join'&&args.template&&p.entityId)throw new Error('Create a new empty profile before creating a new game character.');
    if(!requestId||typeof requestId!=='string')throw new Error('Missing action identifier.');
    if(c.requests[requestId])return c.requests[requestId];
    c.requests[requestId]={status:'pending',message:'Submitted; do not retry until confirmed.'};await store.save();
-   try{const r=await game.execute(p,op,args);c.requests[requestId]={status:r.ok===false?'refused':'complete',result:r};}catch(e){c.requests[requestId]={status:'uncertain',message:e.message};}
+   try{const r=await game.execute(p,op,args,guard);c.requests[requestId]={status:r.ok===false?'refused':'complete',result:r};}catch(e){c.requests[requestId]={status:'uncertain',message:e.message};}
    await store.save();return c.requests[requestId];
  }
  const server=createServer(async(req,res)=>{
@@ -90,11 +92,57 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
        if(q.location!==c.state?.here?.id){q.status='stale';await store.save();throw new Error('The character has moved. Prepare a new suggestion for this location.');}
        const args=b.args||q.args;try{validateOperation(q.op,args);}catch(e){q.status='pending';await store.save();throw e;}q.status='executing';await store.save();const r=await execute(p,q.op,args,'suggestion-'+q.id);q.status=r.status;await store.save();return json(res,200,r);
      }
+     if(route==='POST /api/readied'){
+       const rules=c.readied??=[];
+       const current=rules.find(rule=>rule.id===b.id);
+       function checkRevision(){
+         if(b.id&&(!current || !rules.includes(current) || savingReadied.has(current) || current.revision!==b.revision || current.status!=='armed')){
+           throw new Error('This readied action changed. Reload it before editing or disarming.');
+         }
+       }
+       checkRevision();
+       if(b.disarm){
+         if(!current)throw new Error('Choose an armed action to disarm.');
+         current.status='cancelled';current.outcome='Disarmed by you.';
+         await store.save();
+         return json(res,200,packet(id));
+       }
+       const approved=prepareReadied(b);
+       const approvalId=typeof b.approvalId==='string'&&/^[a-f0-9-]{36}$/.test(b.approvalId)?b.approvalId:randomUUID();
+       if(!b.id && rules.some(rule=>rule.id===approvalId))return json(res,200,packet(id));
+       await game.refresh(p);
+       checkRevision();
+       if(!current&&rules.filter(rule=>rule.status==='armed').length>=12)throw new Error('Disarm a readied action before adding another. The limit is 12 per character.');
+       const state=c.state;
+       if((!demo&&state?.connection!=='Live') || !state?.here || state.you?.id!==p.entityId){
+         throw new Error('Reconnect this character before arming an action.');
+       }
+       if(state.here.id!==b.location || state.world!==b.world || p.entityId!==b.entity){
+         throw new Error('The character or scene changed. Review the command again.');
+       }
+       const now=Date.now();
+       if(!b.id&&rules.some(rule=>rule.id===approvalId))return json(res,200,packet(id));
+       const rule={
+         ...approved,id:current?.id||approvalId,revision:randomUUID(),status:'armed',
+         location:state.here.id,locationName:state.here.name,world:state.world,entity:p.entityId,credential:p.credential,
+         since:Math.max(state.cursor||0,c.events.at(-1)?.seq||0),expires:now+approved.minutes*60000,
+       };
+       // Claim the revision synchronously, then persist the approved command before it can fire.
+       const index=current?rules.indexOf(current):rules.length;
+       savingReadied.add(rule);
+       rules[index]=rule;
+       try{await store.save();}catch(error){
+         if(current)rules[index]=current;
+         else rules.splice(index,1);
+         throw error;
+       }finally{savingReadied.delete(rule);}
+       return json(res,200,packet(id));
+     }
      if(route==='POST /api/watch'){
        if(b.stop){const w=watchers.get(b.stop);if(w?.profileId===id){clearTimeout(w.timer);watchers.delete(b.stop);}return json(res,200,{ok:true});}
        if([...watchers.values()].some(w=>w.profileId===id&&w.status==='watching'))throw new Error('Stop the current watch before setting another.');
        const kind=b.kind,value=String(b.value||'').slice(0,100);if(!['arrival','reply','water','dusk'].includes(kind))throw new Error('Choose a watch condition.');
-       const expression=kind==='arrival'?`arrived(${JSON.stringify(value)})`:kind==='reply'?`heard('', by=${JSON.stringify(value)})`:kind==='water'?"me['water'] <= 3":"ambient.get('time_of_day') == 'dusk'";
+       const expression=kind==='arrival'?`came(${JSON.stringify(value)})`:kind==='reply'?`heard('', by=${JSON.stringify(value)})`:kind==='water'?"me['water'] <= 3":"ambient.get('time_of_day') == 'dusk'";
        const w={id:randomUUID(),profileId:id,kind,value,status:'watching',started:new Date().toISOString(),timer:null};watchers.set(w.id,w);
        async function poll(){if(!watchers.has(w.id))return;try{const r=demo?{fired:kind==='dusk'}:await game.serial(p,async()=>{await game.assertCharacter(p);return game.transport(p,'wait',{until:expression,timeout:10,since:c.state?.cursor||0});});if(!watchers.has(w.id))return;if(r.ok===false)throw new Error(r.reason);if(r.fired){w.status='fired';c.messages.push({id:randomUUID(),timelineSeq:c.state?.cursor||0,role:'notice',text:'Watch triggered: '+kind+' '+value,time:new Date().toISOString()});await game.refresh(p);await store.save();return;}}catch(e){w.status='error';w.error=e.message;return;}w.timer=setTimeout(poll,3000);}
        w.timer=setTimeout(poll,100);return json(res,200,{ok:true});
@@ -109,10 +157,14 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
  let liveBusy=false;
  const liveTimer=setInterval(async()=>{
    if(liveBusy)return;liveBusy=true;
-   try{for(const id of liveProfiles.values()){
+   const active=new Set(liveProfiles.values());
+   const armed=store.data.profiles.filter(p=>store.character(p.id).readied?.some(rule=>rule.status==='armed')).map(p=>p.id);
+   try{for(const id of new Set([...active,...armed])){
      const p=store.profile(id),c=store.character(id);
-     if(p.liveFeed===false||c.agentStatus==='working')continue;
-     try{await game.refresh(p);}catch{/* Retry on the next interval. */}
+     if(c.agentStatus!=='working' && (armed.includes(id) || p.liveFeed!==false)){
+       try{await game.refresh(p);}catch{/* Retry on the next interval. */}
+     }
+     try{await runReadied({profile:p,character:c,store,execute,demo,saving:savingReadied});}catch{/* Leave any interrupted delivery unconfirmed. */}
    }}finally{liveBusy=false;}
  },liveIntervalMs);liveTimer.unref();
  const stop=()=>{clearInterval(liveTimer);clearInterval(background);for(const w of watchers.values())clearTimeout(w.timer);watchers.clear();agent.close();server.close();};

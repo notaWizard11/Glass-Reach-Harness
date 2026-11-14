@@ -58,9 +58,19 @@ export class Game {
       ingest(c,r,events);await this.store.save();return c.state;
     }catch(e){if(c.state){c.state.connection='Saved observation';c.state.problem=e.message;await this.store.save();return c.state;}throw e;}
   }
-  async execute(p,op,args){validateOperation(op,args);return this.serial(p,async()=>{
+  async execute(p,op,args,guard){validateOperation(op,args);return this.serial(p,async()=>{
+    if(guard){
+      if(p.entityId!==guard.entity || p.credential!==guard.credential){
+        return {ok:false,reason:'The character connection changed before dispatch.'};
+      }
+      const current=this.demo?this.store.character(p.id).state:await this.assertCharacter(p);
+      if(current?.you?.id!==guard.entity || current.world!==guard.world || current.here?.id!==guard.location){
+        return {ok:false,reason:'The character, world or scene changed before dispatch.'};
+      }
+      if(Date.now()>=guard.expires)return {ok:false,reason:'The readied action expired before dispatch.'};
+    }
     if(this.demo)return this.demoExecute(p,op,args);
-    if(op!=='join')await this.assertCharacter(p);
+    if(op!=='join'&&!guard)await this.assertCharacter(p);
     const result=await this.transport(p,op,args);
     if(result.ok===false)return result;
     if(op==='join'&&args.template){const r=await this.transport(p,'perceive',{events:0});if(!r.you?.id)throw new Error('Character creation response uncertain; inspect seats before retrying.');p.entityId=r.you.id;p.name=r.you.name;}

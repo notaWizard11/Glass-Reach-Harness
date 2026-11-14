@@ -49,7 +49,12 @@ test('demo integration: origins, persistence, actions, atlas, proposals and prof
 test('restart preserves uncertain delivery without retrying',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'glass-reach-restart-')),store=await new Store(dir,true).init(),c=store.character('aaron');
  c.requests.sent={status:'pending'};c.agentStatus='working';c.suggestions=[{id:'sent',status:'executing'},{id:'review',status:'reviewing'}];await store.save();
+ c.readied=[{revision:'in-flight',status:'executing'},{revision:'confirmed',status:'executing'},{revision:'waiting',status:'armed'}];
+ c.requests['readied-in-flight']={status:'pending'};
+ c.requests['readied-confirmed']={status:'complete'};
+ await store.save();
  const restored=(await new Store(dir,true).init()).character('aaron');assert.equal(restored.requests.sent.status,'uncertain');assert.equal(restored.suggestions[0].status,'uncertain');assert.equal(restored.suggestions[1].status,'pending');assert.match(restored.agentStatus,/Interrupted/);
+ assert.deepEqual(restored.readied.map(rule=>rule.status),['uncertain','complete','armed']);
 });
 
 test('older history and export include events beyond the initial window',async t=>{
@@ -78,4 +83,43 @@ test('interaction models override the general model with account-default fallbac
  assert.equal(modelForPurpose({model:'general',modelsByPurpose:{chat:'small',game:'large'}},'game'),'large');
  assert.equal(modelForPurpose({model:'general',modelsByPurpose:{atlas:''}},'atlas'),'general');
  assert.equal(modelForPurpose({model:''},'suggestions'),undefined);
+});
+
+test('readied actions edit, disarm and fire once in the background',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'glass-reach-readied-'));
+ const app=await startServer({demo:true,port:0,dataDir:dir,liveIntervalMs:25});
+ t.after(()=>app.stop());
+ const headers={'X-Glass-Reach-Dashboard':'1'};
+ const session=await (await fetch(app.url+'api/session',{headers})).json();
+ const post=async(path,body)=>fetch(app.url+'api/'+path,{method:'POST',
+   headers:{...headers,'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify(body)});
+ const arm=async body=>{
+   const response=await post('readied',body);
+   const payload=await response.json();
+   assert.equal(response.status,200,payload.error);
+   return payload.readied.find(rule=>rule.id===(body.id||body.approvalId));
+ };
+ await post('settings',{liveFeed:false});
+ const scene={minutes:5,world:session.state.world,entity:session.profile.entityId,location:session.state.here.id};
+ const reply={...scene,approvalId:crypto.randomUUID(),trigger:{kind:'reply',person:'sera',phrase:'ready'},op:'say',args:{text:'Old line',to:'sera'}};
+ const original=await arm(reply);
+ assert.equal((await arm(reply)).revision,original.revision,'a repeated approval does not add a duplicate');
+ const edited=await arm({...reply,id:original.id,revision:original.revision,args:{text:'I will meet you there.',to:'sera'}});
+ assert.notEqual(edited.revision,original.revision);
+ assert.equal((await post('readied',{id:original.id,revision:original.revision,disarm:true})).status,400);
+ const arrival=await arm({...scene,approvalId:crypto.randomUUID(),trigger:{kind:'arrival',person:'sera'},op:'act',args:{verb:'drink',target:'skin'}});
+ const cancelled=await arm({...scene,approvalId:crypto.randomUUID(),trigger:{kind:'water'},op:'say',args:{text:'Disarmed line'}});
+ assert.equal((await post('readied',{id:cancelled.id,revision:cancelled.revision,disarm:true})).status,200);
+ const c=app.store.character('aaron');
+ c.events.push({seq:10,kind:'say',actor:'sera',payload:{text:'ready for everyone'}});
+ await new Promise(r=>setTimeout(r,70));
+ assert.equal(c.readied.find(rule=>rule.id===edited.id).status,'armed','a public line is not a direct reply');
+ c.events.push({seq:11,kind:'say',actor:'sera',target:scene.entity,payload:{text:'I am ready.'}});
+ c.events.push({seq:12,kind:'moved',actor:'sera',target:'sera',payload:{from:'road',to:scene.location}});
+ for(let i=0;i<100&&c.readied.find(rule=>rule.id===arrival.id).status!=='complete';i++)await new Promise(r=>setTimeout(r,10));
+ await new Promise(r=>setTimeout(r,70));
+ assert.deepEqual(c.readied.map(rule=>rule.status),['complete','complete','cancelled']);
+ assert.equal(c.events.filter(event=>event.payload?.text==='I will meet you there.').length,1);
+ assert.equal(c.events.filter(event=>event.kind==='drank'&&event.seq>12).length,1);
+ assert.equal(c.messages.filter(m=>m.text.startsWith('Readied action · complete')).length,2);
 });

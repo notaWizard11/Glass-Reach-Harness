@@ -11,6 +11,14 @@ export class Store {
     catch(e) { if(e.code!=='ENOENT') throw e; this.data={version:2,masterPrompt:defaultPrompt,promptVersions:[],model:'',profiles:[{id:'aaron',name:this.demo?'Demo Keeper':'Player',entityId:this.demo?'demo-keeper':'',credential:'legacy',instructions:'',mode:'manual'}],characters:{}}; await this.save(); }
     // A request interrupted by a restart is never retried automatically.
     for(const c of Object.values(this.data.characters)) { if(c.agentStatus==='working') c.agentStatus='Interrupted by server restart';c.agentPreview='';for(const q of c.suggestions||[]) {if(q.status==='executing')q.status='uncertain';if(q.status==='reviewing')q.status='pending';}for(const r of Object.values(c.requests||{}))if(r.status==='pending')r.status='uncertain'; }
+    for (const c of Object.values(this.data.characters)) {
+      for (const rule of c.readied||[]) {
+        if (rule.status!=='executing') continue;
+        const request=c.requests?.['readied-'+rule.revision];
+        rule.status=['complete','refused'].includes(request?.status)?request.status:'uncertain';
+        rule.outcome=request?.result?.reason||(rule.status==='complete'?'Game confirmed the command.':'The server restarted during delivery. Check the game record.');
+      }
+    }
     await this.save(); return this;
   }
   profile(id) { const p=this.data.profiles.find(x=>x.id===id); if(!p) throw new Error('Character profile not found.'); return p; }

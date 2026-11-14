@@ -2,28 +2,60 @@
 
 A local browser dashboard for **The Glass Reach**, with a Codex conversation, character records, a branching connections map, an atlas, and RPG inventory views. Early preview software; the live game integration is evolving.
 
-## Try the fictional demo
+## Quick start: from download to playing (Windows)
 
-Install Node.js 22 or newer, download/extract this repository, and run:
+**You need:** a Windows PC, a Codex account with access, and your own Glass Reach **game token** and **character ID**. Get the token from whoever provided your game access. If you already play through an agent, ask it for your character ID. These are not your ChatGPT password or an OpenAI API key.
 
-```sh
-npm run demo
+### 1. Download the dashboard
+
+On this GitHub page, click the green **Code** button → **Download ZIP**. Right-click the downloaded ZIP → **Extract All**, then open the extracted folder. No GitHub account or Git installation is needed.
+
+### 2. Check the one-time requirements
+
+Install [Node.js LTS for Windows](https://nodejs.org/en/download) (version 22 or newer) with the default options if it is not already installed.
+
+The dashboard needs **Codex CLI**, the command-line version of Codex. Having the desktop app alone does not guarantee this connection is ready. Open **Start → Command Prompt** and enter:
+
+```text
+codex --version
+codex login status
 ```
 
-Open http://127.0.0.1:47382/. On Windows, you can instead double-click **Open Glass Reach Demo.cmd**. No npm dependencies, game account, or Codex sign-in are needed for the demo. Demo replies are scripted; Act in game demonstrates a single fictional speech action rather than interpreting arbitrary instructions.
+If `codex` is not recognized, follow the **Windows** tab in the [official Codex CLI installation guide](https://learn.chatgpt.com/docs/codex/cli), then open a new Command Prompt. If it is not signed in, run `codex login` and complete the browser sign-in with your usual account. [Official sign-in help](https://learn.chatgpt.com/docs/auth).
 
-## Connect to the game
+**No dashboard plugin or separate OpenAI API key is needed for this sign-in route.**
 
-Live operation requires Windows, Node.js, a locally installed and signed-in Codex CLI, and your own game access token. No credentials or saved campaign records are distributed here.
+### 3. Open the dashboard
 
-1. Run **Open Glass Reach Dashboard.cmd** or `npm start`, then open http://127.0.0.1:47381/.
-2. Choose **+ Character**. Enter a profile name, your existing character ID, and your game token. The token is protected with Windows DPAPI on this PC. For a new character, leave the ID empty and use the templates available to your game grant.
-3. In **Agent settings**, use **Reconnect selected character** to join that seat, then **Connect / check Codex**.
-4. Save your master prompt and character-specific preferences. Use the composer to play.
+Double-click **Open Glass Reach Dashboard.cmd** in the extracted folder. Keep its terminal window open while playing. If the browser does not open, visit **http://127.0.0.1:47381/**.
 
-The first empty Player profile is a setup placeholder. Profiles sharing a token share a single active game seat. Reconnect explicitly when switching seats. Separate profiles retain their own conversations, observations, maps, notes and suggestions.
+### 4. Enter your Glass Reach credentials
 
-The dashboard owns its Codex conversation; it does not inherit an existing Codex desktop chat. If the CLI is not on PATH, set `GLASS_REACH_CODEX` to its executable. Codex uses its existing local sign-in.
+Click **+ Character** at the top. Fill in:
+
+| Field | What to enter |
+| --- | --- |
+| Profile name | Your character's name |
+| Existing character ID | Your Glass Reach character ID |
+| Separate game token | Your own Glass Reach access token — required for your first connection, even though the label says optional |
+
+Click **Save profile**, then **Agent settings → Reconnect selected character → Confirm action**. Click **Sync**; your character and location should appear with a **Live** status. The initial empty **Player** profile can be ignored.
+
+Want a new character instead? Leave the ID blank when saving your profile, then use **Browse seats & templates** in Agent settings. Creation depends on your game permissions.
+
+### 5. Connect Codex
+
+In **Agent settings**, click **Connect / check Codex**. Wait for **Codex connected**. You can leave the model at **Account default**. Optionally edit the master prompt and click **Save preferences**.
+
+This dashboard starts its own Codex conversation; you do not need to open a particular desktop chat.
+
+### 6. Play
+
+Use **Talk to Codex** for questions and planning. Switch to **Act in game**, describe what your character does or says, and click **Act** to carry it out. Replies appear under **Your companion**; game events appear in **The unfolding story**. Prompt buttons above the box are shortcuts.
+
+Next time, open the same launcher and use the same folder. Your credentials and records are saved locally. Never share your token or the `.glassreach-data` folder.
+
+**Stuck?** “Not in this world” → reconnect your character. “Codex could not start” → repeat step 2 and reopen the launcher. “node is not recognized” → install Node.js, then reopen the launcher. To look around without accounts, open **Open Glass Reach Demo.cmd** instead; its data and replies are fictional.
 
 ## Message modes
 

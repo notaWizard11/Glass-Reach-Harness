@@ -5,6 +5,8 @@
 /.glassreach-dashboard-cache.json.*.tmp
 /.glassreach-data/
 /dashboard/test-output/
+/.glassreach-*
+/dashboard/local-marketplace/
 *.dpapi
 *.jsonl
 .env

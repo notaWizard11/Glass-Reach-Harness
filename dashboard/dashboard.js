@@ -177,22 +177,22 @@ function renderScenes(){
   });
 }
 
-let liveDeadline=null;
-function renderLiveCountdown(){
-  const label=$('live-countdown');
-  if(offline)label.textContent='Offline';
-  else if(data?.profile.liveFeed===false)label.textContent='Live paused';
-  else if(data?.liveChecking)label.textContent='Checking…';
-  else if(data?.agentStatus==='working')label.textContent='After current turn';
-  else if(liveDeadline!=null){
-    const seconds=Math.ceil((liveDeadline-performance.now())/1000);
-    label.textContent=seconds>0?'Next check in '+seconds+'s':'Next check due';
+function renderLiveActivity(){
+  const indicator=$('live-activity');
+  let status='Live updates active';
+  if(offline)status='Live updates offline';
+  else if(!$('auto').checked)status='Live updates paused';
+  else if(!data?.demo && state().connection!=='Live')status='Waiting for game connection';
+  else if(data?.agentStatus==='working'&&!data.liveChecking)status='Live updates resume after the current turn';
+  indicator.classList.toggle('active',status==='Live updates active');
+  if(indicator.title!==status){
+    indicator.title=status;
+    indicator.setAttribute('aria-label',status);
   }
 }
-setInterval(renderLiveCountdown,250);
 const button=(text,fn,cls)=>{const b=el('button',text,cls);b.type='button';b.addEventListener('click',()=>Promise.resolve().then(fn).catch(error=>toast(error.message)));return b;};
 function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,6500);}
-async function api(path,body,selected=profile){const r=await fetch('/api/'+path+(body===undefined?(path.includes('?')?'&':'?')+'profile='+encodeURIComponent(selected):''),{method:body===undefined?'GET':'POST',headers:{'X-Glass-Reach-Dashboard':'1',...(body===undefined?{}:{'Content-Type':'application/json','X-CSRF-Token':csrf})},body:body===undefined?undefined:JSON.stringify({...body,profile:selected})});const j=await r.json();if(!r.ok)throw new Error(j.error||'Request failed');return j;}
+async function api(path,body,selected=profile){const r=await fetch('/api/'+path+(body===undefined?(path.includes('?')?'&':'?')+'profile='+encodeURIComponent(selected):''),{signal:path==='session'?AbortSignal.timeout(6000):undefined,method:body===undefined?'GET':'POST',headers:{'X-Glass-Reach-Dashboard':'1',...(body===undefined?{}:{'Content-Type':'application/json','X-CSRF-Token':csrf})},body:body===undefined?undefined:JSON.stringify({...body,profile:selected})});const j=await r.json();if(!r.ok)throw new Error(j.error||'Request failed');return j;}
 function change(key,value,fn){const next=JSON.stringify(value);if(fingerprints.get(key)===next)return;fingerprints.set(key,next);fn();}
 function state(){return data?.state||{};}
 function person(){return state().you?.state||{};}
@@ -215,10 +215,8 @@ function details(value,label='Details'){const d=el('details');d.append(el('summa
 function paragraph(parent,text,cls){parent.append(el('p',text,cls));}
 async function load(selected=profile){const r=await api('session',undefined,selected);if(profile!==selected)return;csrf=r.csrf;offline=false;data=r;checkStorySound(r);render();try{localStorage.setItem('gr-saved-'+profile,JSON.stringify({...r,csrf:undefined}));}catch{}}
 async function refresh(){if(busy||!data)return;const selected=profile;busy=true;$('refresh').disabled=true;try{const r=await api('refresh',{},selected);if(profile===selected){data=r;csrf=r.csrf;offline=false;checkStorySound(r);render();}}catch(e){offline=true;toast(e.message);renderConnection();}finally{busy=false;$('refresh').disabled=false;}}
-function renderConnection(){const s=state();$('connection').textContent=offline?'Offline · saved ledger':data?.demo?'Fictional preview':s.connection||'Not connected';$('connection').classList.toggle('live',s.connection==='Live'&&!offline);$('notice').hidden=!(offline||data?.demo||s.problem||s.connection==='Saved observation');$('notice').textContent=offline?'Connection lost. Saved information and your draft remain available. Reconnect before sending.':data?.demo?'FICTIONAL PREVIEW · All characters, replies, and actions in this view are simulated.':s.problem||'Showing saved observations. Sync to check the current situation.';}
-function render(){if(!data)return;const s=state(),p=person();renderConnection();
- if(Number.isFinite(data.liveNextAt))liveDeadline=performance.now()+Math.max(0,data.liveNextAt-data.serverTime);
- renderLiveCountdown();renderScenes();$('auto').checked=data.profile.liveFeed!==false;
+function renderConnection(){renderLiveActivity();const s=state();$('connection').textContent=offline?'Offline · saved ledger':data?.demo?'Fictional preview':s.connection||'Not connected';$('connection').classList.toggle('live',s.connection==='Live'&&!offline);$('notice').hidden=!(offline||data?.demo||s.problem||s.connection==='Saved observation');$('notice').textContent=offline?'Connection lost. Saved information and your draft remain available. Reconnect before sending.':data?.demo?'FICTIONAL PREVIEW · All characters, replies, and actions in this view are simulated.':s.problem||'Showing saved observations. Sync to check the current situation.';}
+function render(){if(!data)return;const s=state(),p=person();$('auto').checked=data.profile.liveFeed!==false;renderConnection();renderScenes();
  change('profiles',data.profiles,()=>{$('character').replaceChildren(...data.profiles.map(p=>{const o=el('option',p.name);o.value=p.id;return o;}));});$('character').value=profile;
  $('scene-title').textContent=s.here?.name||'No observations yet';$('scene-description').textContent=s.here?.state?.description||'Connect this character to begin observing the world.';$('scene-weather').textContent=s.ambient?.weather||'';$('scene-time').textContent=s.ambient?.time_of_day||'';$('scene-day').textContent=s.t!=null?'DAY '+(Math.floor(s.t/86400)+1):'—';
  $('character-name').textContent=s.you?.name||data.profile.name;$('composer-character').textContent=data.profile.name;
@@ -436,7 +434,7 @@ $('public-timers').onclick=async()=>{try{const r=await api('inspect',{op:'timers
 $('manage').onclick=()=>{const root=openDialog('Add a character profile');paragraph(root,'Keep each character’s memories, conversation and suggestions separate. Reusing a game connection switches its single active seat when you reconnect.');const n=field(root,'Profile name'),id=field(root,'Existing character ID (leave empty to create from a template)'),token=field(root,'Separate game token (optional; encrypted on this PC)','password');root.append(button('Save profile',async()=>{const r=await api('profiles',{name:n.value,entityId:id.value,token:token.value});token.value='';profile=r.id;localStorage.setItem('gr-profile',profile);fingerprints.clear();settingsDirty=false;await load();$('draft').value='';$('drawer').close();setPage('settings');toast('Profile saved. Reconnect its seat or choose a template.');},'primary'));};
 $('seats').onclick=async()=>{try{const r=await api('inspect',{op:'seats'});if(r.ok===false)throw new Error(r.reason);const root=$('seat-results');root.replaceChildren();for(const t of r.templates||[])root.append(button('Create '+t.template,()=>{const box=openDialog('Create a '+t.template);paragraph(box,t.doc||'Create a new character under this profile. This changes the active seat on its game connection.');const n=field(box,'Character name','text',data.profile.name),description=field(box,'Appearance (set when created)','textarea');box.append(button('Create character in game',()=>perform('join',{template:t.template,name:n.value,description:description.value}),'primary'));}));for(const seat of r.seats||[])root.append(el('p',(seat.name||seat.entity)+' · '+(seat.held||seat.embodied_by?'Occupied':'Seat listed')));root.append(details(r,'Seat availability details'));}catch(e){toast(e.message);}};
 async function start(){setPage(page);try{await load();if(page==='settings')connectModels();}catch(e){try{data=JSON.parse(localStorage.getItem('gr-saved-'+profile));if(data){offline=true;render();}else toast(e.message);}catch{toast(e.message);}}$('draft').value=localStorage.getItem('gr-draft-'+profile)??data?.draft??'';if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});}
-$('auto').onchange=async()=>{try{await api('settings',{liveFeed:$('auto').checked});}catch(e){toast(e.message);}await load();};
+$('auto').onchange=async()=>{renderLiveActivity();try{await api('settings',{liveFeed:$('auto').checked});await load();}catch(e){toast(e.message);load().catch(()=>{offline=true;renderConnection();});}};
 let loadingFeed=false;
 setInterval(async()=>{if(loadingFeed)return;loadingFeed=true;try{await load();}catch{offline=true;renderConnection();}finally{loadingFeed=false;}},1000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)load().catch(()=>{});});start();

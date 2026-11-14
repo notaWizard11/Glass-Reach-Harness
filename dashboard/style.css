@@ -23,6 +23,13 @@
 #feed-filter-options label{margin:0;font-size:12px}
 .feed-filters>.inline{padding:4px 8px 8px}
 .chronicle>.panel-heading>.inline{flex-wrap:wrap;justify-content:flex-end}
-#live-countdown{white-space:nowrap}
+#live-activity{position:relative;display:inline-grid;place-items:center;width:16px;height:16px;color:var(--muted);flex:none}
+#live-activity::before{content:"";box-sizing:border-box;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%}
+#live-activity::after{content:"";position:absolute;width:16px;height:2px;background:currentColor;transform:rotate(-45deg);box-shadow:0 0 0 1px var(--panel)}
+#live-activity.active{color:var(--mint)}
+#live-activity.active::before{animation:live-turn 2s linear infinite}
+#live-activity.active::after{display:none}
+@keyframes live-turn{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){#live-activity.active::before{animation:none}}
 #scene-preview img{display:block;width:100%;height:auto;border-radius:5px}
 #scene-list .map-entry{width:100%;margin-top:6px}

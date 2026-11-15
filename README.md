@@ -62,7 +62,7 @@ Next time, open the same launcher and use the same folder. Your credentials and 
 - **Talk to Codex:** private questions, discussion and planning in your character’s inner voice. It never executes game actions. Proposed actions can be reviewed separately.
 - **Act in game:** describe actions and dialogue naturally. Sending authorizes the requested sequence. The agent chooses one step at a time, using fresh observations and previous results. It can inspect objects between actions. It stops on a refusal, uncertain delivery, Stop, or a 12-step limit.
 
-Stop prevents subsequent steps; it cannot undo an action already sent. Interrupted or uncertain actions are never automatically retried. Unsolicited and autopilot suggestions always remain approval-only.
+Stop prevents subsequent steps; it cannot undo an action already sent. Interrupted or uncertain actions are never automatically retried. Ordinary inner thoughts do not create action approvals. Quest discovery records local story threads; it never executes game actions.
 
 ## Features
 
@@ -73,7 +73,7 @@ Stop prevents subsequent steps; it cannot undo an action already sent. Interrupt
 - Ready/backpack organization, item details and contextual actions. Grouping is personal organization, not an engine equipment command.
 - Relationships, memories, goals, documents and local notes.
 - Versioned master prompt, conversation reset/archive, character exports and persistent drafts.
-- A Watch & automation composer tab for arrival/reply/water/dusk watches and approval-only background suggestions.
+- A Watch & automation composer tab for arrival/reply/water/dusk watches, readied actions and optional background quest discovery.
 - Responsive layout and an installable browser shell where supported.
 
 ## Local data and privacy
@@ -108,8 +108,16 @@ After an absence, choose **Catch me up** for events since your last caught-up ma
 
 Recaps use records saved for the selected character. Coverage notices show when history is still syncing or the connection is interrupted. Events the game never exposed cannot be reconstructed; keep the local server running to collect updates while away. Normal inner-thought questions also search older saved events for relevant context.
 
-Settings loads the models available to your signed-in Codex account automatically. Choose a General model and optional overrides for Inner thoughts, Game actions & narration, Atlas diagrams, and Automated suggestions; then select Save model choices. Empty overrides inherit the general model. Account default uses your Codex configuration.
+Settings loads the models available to your signed-in Codex account automatically. Choose a General model and optional overrides for Inner thoughts, Game actions & narration, Auto prose, Atlas diagrams, and Quest discovery; then select Save model choices. Empty overrides inherit the general model. Account default uses your Codex configuration.
 
 Open **Watch & automation** from the navigation or the Play composer. Choose **Ready an action**, select a trigger and one exact game action or line of dialogue, then review and approve it. Up to 12 actions per character can wait at once. Edit and approve an armed rule again to replace it, or disarm it. The game must still be connected to that character and the character must be in the scene where you armed the command. Each rule expires at the time you choose. The dashboard server checks rules in the background even with Live off. The story feed and rule list show what happened.
 
 To illustrate a scene, set an OpenAI API key in the dashboard server’s OPENAI_API_KEY environment variable and relaunch. Open **Atlas → Scene images**, describe the scene, and click **Generate scene image**. This sends the request and a short visual description of the last observed location to the OpenAI Images API. Generation uses your API project’s billing. Images are saved locally for the selected character and can be downloaded as PNG files.
+
+## Quests and Journal
+
+**Quests** replaces Approvals. Choose **Discover quests from the story** to read saved events in resumable batches and find supported mysteries, promises, obligations and errands. Each discovered thread links to its evidence. Track, edit, block, complete or dismiss it; discovery preserves your chosen progress. The first scan can take several model calls; later scans process only new events. The Quest discovery model setting controls this work. Background discovery is optional in Watch & automation.
+
+In **Inner thoughts**, say “Add this to my quests”, “Mark my water quest completed”, or “Save what just happened in my memories”. The agent resolves the context and the dashboard confirms the records actually saved. These are local, per-character records and survive a fresh conversation. Writing a memory into the game remains a separate explicit action.
+
+**Atlas** now contains known places. **People & relationships** has its own tab. **Journal** holds notes, local memories, game memories and copies of documents whose text has been observed or inspected. Copies persist after the item leaves inventory; changed text keeps earlier observed versions. Documents never seen by the dashboard cannot be reconstructed.

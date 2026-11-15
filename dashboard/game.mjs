@@ -1,3 +1,4 @@
+import {captureDocuments} from './journal.mjs';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -39,7 +40,7 @@ export class Game {
       if(c.state){ingest(c,c.state,events);c.state.connection='Saved observation';await this.store.save();}
     }catch{}
   }
-  async read(p,op,args={}){if(!readOps.has(op))throw new Error('Unsupported inspection.');if('principal'in args||'from_entity'in args||'entity'in args&&op!=='inspect')throw new Error('This inspection must use the selected character.');return this.serial(p,async()=>{if(this.demo)return this.demoRead(p,op,args);if(!['seats','summary'].includes(op))await this.assertCharacter(p);return this.transport(p,op,args);});}
+  async read(p,op,args={}){if(!readOps.has(op))throw new Error('Unsupported inspection.');if('principal'in args||'from_entity'in args||'entity'in args&&op!=='inspect')throw new Error('This inspection must use the selected character.');return this.serial(p,async()=>{if(!this.demo&&!['seats','summary'].includes(op))await this.assertCharacter(p);const result=this.demo?this.demoRead(p,op,args):await this.transport(p,op,args);if(op==='inspect'){captureDocuments(this.store.character(p.id),[result,result.entity,...(Array.isArray(result.contents)?result.contents:[])]);await this.store.save();}return result;});}
   async assertCharacter(p){const r=await this.transport(p,'perceive',{events:0});if(r.you?.id!==p.entityId)throw new Error('This game connection is controlling a different character or has expired. Use Reconnect for the selected profile.');return r;}
   async refresh(p){return this.serial(p,()=>this.refreshUnlocked(p));}
   async refreshUnlocked(p){

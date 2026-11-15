@@ -25,7 +25,8 @@ test('demo integration: origins, persistence, actions, atlas, proposals and prof
  const action={op:'say',args:{text:'An exact test line <script>alert(1)</script>'},requestId:'one-action'};
  assert.equal((await call('action',action)).body.status,'complete');await call('action',action);
  session=(await call('session')).body;assert.equal(session.events.length,before+1);assert.equal(session.events.at(-1).payload.text,action.args.text);
- await call('agent',{text:'What should I do?'});session=(await call('session')).body;assert.ok(session.suggestions.length);assert.equal(session.events.length,before+1,'proposals do not execute');
+ await call('agent',{text:'What should I do?'});session=(await call('session')).body;assert.equal(session.suggestions.length,0,'ordinary inner thoughts no longer create approval clutter');
+ await call('agent',{text:'Legacy explicit proposal request',purpose:'suggestions'});session=(await call('session')).body;assert.ok(session.suggestions.length);assert.equal(session.events.length,before+1,'proposals do not execute');
  const q=session.suggestions[0];const approvals=await Promise.all([call('suggestion',{id:q.id}),call('suggestion',{id:q.id})]);assert.equal(approvals.filter(x=>x.body.status==='complete').length,1);assert.equal(approvals.filter(x=>x.status===400).length,1);assert.equal((await call('session')).body.events.length,before+2,'concurrent approvals execute only once');
  await call('agent',{text:'Draw the area',purpose:'atlas'});session=(await call('session')).body;assert.ok(session.maps[0].nodes.length>1);
  await call('settings',{model:'general-test',modelsByPurpose:{chat:'small-test',game:'large-test',prose:'prose-test',atlas:'',suggestions:''}});
@@ -35,7 +36,7 @@ test('demo integration: origins, persistence, actions, atlas, proposals and prof
  const second=(await call('profiles',{name:'Second Keeper',entityId:'second'})).body.id;const s2=(await call('session',undefined,second)).body;assert.equal(s2.draft,'');assert.equal(s2.notes.length,0);assert.equal(s2.messages.length,0);assert.equal(s2.state.you.id,'second');
  assert.equal((await call('action',{op:'join',args:{entity:'other'},requestId:'bad'})).status,400);
  assert.equal((await call('action',{op:'join',args:{template:'scout',name:'Overwrite'},requestId:'bad2'})).status,400);
- await call('agent',{text:'Suggest again'});session=(await call('session')).body;const stale=session.suggestions.find(x=>x.status==='pending');await call('action',{op:'act',args:{verb:'go',target:'road'},requestId:'move'});assert.equal((await call('suggestion',{id:stale.id})).status,400);
+ await call('agent',{text:'Suggest again',purpose:'suggestions'});session=(await call('session')).body;const stale=session.suggestions.find(x=>x.status==='pending');await call('action',{op:'act',args:{verb:'go',target:'road'},requestId:'move'});assert.equal((await call('suggestion',{id:stale.id})).status,400);
  const stored=await new Store(dir,true).init();assert.equal(stored.character('aaron').draft,'Do not lose this');assert.equal(stored.character(second).messages.length,0);
  const eventCount=(await call('session')).body.events.length;
  await call('agent',{text:'Discuss the next step only.',mode:'chat'});

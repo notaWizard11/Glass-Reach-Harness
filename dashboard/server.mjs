@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { Store } from './store.mjs';
 import { Game, validateOperation } from './game.mjs';
 import { Agent } from './agent.mjs';
+import {applyRecords,recordPermissions,questStatuses} from './journal.mjs';
 import { prepareReadied, runReadied } from './readied.mjs';
 import { generateSceneImage } from './scene-images.mjs';
 import { storyPage, buildScenes, summarizeHistory, coverageText, describeEvent, historicalNames, sceneEvidence } from './story.mjs';
@@ -54,6 +55,23 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
    c.stopRequested=false;c.agentStatus='working';c.agentProgress=0;c.agentPreview='';c.messages.push({id:randomUUID(),timelineSeq:c.state?.cursor||0,role:'user',mode:purpose==='game'?'game':'chat',text,time:new Date().toISOString()});await store.save();
    (async()=>{try{
      let answer;
+     if(purpose==='quests'){
+       if(c.historyCoverage?.pending)throw new Error('Wait for history to finish syncing before discovering quests.');
+       const unseen=c.events.filter(event=>event.seq>(c.questCursor||0));let count=0;
+       for(let offset=0;offset<unseen.length;){
+         if(c.stopRequested)throw new Error('Quest discovery stopped. Completed batches are saved.');
+         const batch=[];let size=0;
+         while(offset<unseen.length&&batch.length<300){const event=unseen[offset],length=JSON.stringify(event).length;if(batch.length&&size+length>48000)break;batch.push(event);size+=length;offset++;}
+         c.agentPreview='Finding story threads · '+offset+' of '+unseen.length+' records';
+         const evidence=JSON.stringify({events:batch,names:historicalNames(c),existingQuests:(c.quests||[]).map(({id,title,status,text})=>({id,title,status,text}))});
+         const result=demo?{records:[{kind:'quest',id:'',title:'Investigate the lights beyond the ridge',text:'Sera saw three lights moving together. Find out what they were and where they stopped.',status:'discovered',sourceSeqs:[3]}]}:await agent.reply(p,'Find grounded quests in this part of the story. Use existing quest IDs for the same threads.','quests',undefined,undefined,evidence);
+         if(c.stopRequested)throw new Error('Quest discovery stopped.');
+         const valid=new Set(batch.map(event=>event.seq));
+         count+=applyRecords(c,(result.records||[]).map(record=>({...record,sourceSeqs:(record.sourceSeqs||[]).filter(seq=>valid.has(seq))})),{allowed:['quest'],automatic:true}).length;
+         c.questCursor=batch.at(-1).seq;await store.save();
+       }
+       c.messages.push({id:randomUUID(),timelineSeq:c.state?.cursor||0,role:'notice',text:'Quest log updated: '+count+' new story thread'+(count===1?'':'s')+'. Existing quest progress was preserved.',time:new Date().toISOString()});c.agentStatus='idle';return;
+     }
      if(purpose==='game'){
        const reply=await runGameTurn({profile:p,character:c,text,game,execute,save:()=>store.save(),cancelled:()=>c.stopRequested,
          plan:execution=>demo?Promise.resolve(execution.results.length?{reply:'You speak: “'+text+'”',suggestions:[]}:{reply:'',suggestions:[{title:'Speak your words in the fictional preview',op:'say',argumentsJson:JSON.stringify({text})}]}):agent.reply(p,text,'game',undefined,execution)});
@@ -61,8 +79,12 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      }
      if(demo){const s=c.state;answer={reply:purpose==='atlas'?'I have charted the routes recorded in this fictional scene. This is a schematic, not a scale map.':'Sera is waiting at the gate, and the road is open. I could ask her about the lights, or examine the scout’s note before deciding.',suggestions:purpose==='atlas'?[]:[{title:'Ask Sera about the lights',reason:'She witnessed them from the road.',op:'say',argumentsJson:JSON.stringify({text:'Where did you see the three lights stop?',to:'sera'})}],map:purpose==='atlas'?{title:'Roads around '+s.here.name,description:text,nodes:[{id:s.here.id,label:s.here.name,x:50,y:50,note:'Current location'},...s.exits.map((e,i)=>({id:e.to,label:e.name,x:50+36*Math.cos(i*Math.PI*2/s.exits.length),y:50+36*Math.sin(i*Math.PI*2/s.exits.length),note:e.locked?'Locked route':'Observed exit'}))],edges:s.exits.map(e=>({from:s.here.id,to:e.to,uncertain:false}))}:null};}
      else answer=await agent.reply(p,text,purpose,t=>{c.agentProgress=t.length;const m=t.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/s);if(m){try{c.agentPreview=JSON.parse('"'+m[1].replace(/\\$/,'')+'"');}catch{}}});
-     c.messages.push({id:randomUUID(),timelineSeq:c.state?.cursor||0,mode:'chat',role:'assistant',text:answer.reply,time:new Date().toISOString()});
-     for(const proposal of (answer.suggestions||[]).slice(0,12)){try{const args=JSON.parse(proposal.argumentsJson);if(!['act','say','remember','intend'].includes(proposal.op))continue;validateOperation(proposal.op,args);c.suggestions.push({id:randomUUID(),title:proposal.title,reason:proposal.reason,op:proposal.op,args,status:'pending',...source,created:new Date().toISOString()});}catch{}}
+     if(c.stopRequested)throw new Error('Response stopped. No journal entries saved.');
+     if(demo&&purpose==='chat')answer.records=recordPermissions(text).map(kind=>({kind,id:'',title:text.slice(0,100),text,status:'active',sourceSeqs:[c.events.at(-1)?.seq].filter(Boolean)}));
+     const saved=applyRecords(c,answer.records,{allowed:purpose==='chat'?recordPermissions(text):[]});
+     const confirmation=saved.length?'\n\nSaved locally: '+saved.map(record=>(record.kind==='quest'?'Quest':record.kind==='memory'?'Journal memory':'Note')+' — '+record.title).join('; ')+'.':'';
+     c.messages.push({id:randomUUID(),timelineSeq:c.state?.cursor||0,mode:'chat',role:'assistant',text:answer.reply+confirmation,time:new Date().toISOString()});
+     if(purpose==='suggestions')for(const proposal of (answer.suggestions||[]).slice(0,12)){try{const args=JSON.parse(proposal.argumentsJson);if(!['act','say','remember','intend'].includes(proposal.op))continue;validateOperation(proposal.op,args);c.suggestions.push({id:randomUUID(),title:proposal.title,reason:proposal.reason,op:proposal.op,args,status:'pending',...source,created:new Date().toISOString()});}catch{}}
      if(answer.map){const m=answer.map;if(!Array.isArray(m.nodes)||m.nodes.length>100||!Array.isArray(m.edges))throw new Error('The map response was invalid.');c.maps.push({...m,id:randomUUID(),created:new Date().toISOString(),request:text,sourceCursor:c.state?.cursor,location:c.state?.here?.id});}
      c.agentStatus='idle';
    }catch(e){c.agentStatus='error';c.messages.push({id:randomUUID(),role:'error',text:e.message,time:new Date().toISOString()});}finally{c.activeThread=null;c.agentPreview='';await store.save();}})().catch(()=>{c.agentStatus='error';c.messages.push({id:randomUUID(),role:'error',text:'The local record could not be saved. Check folder access before continuing.',time:new Date().toISOString()});});
@@ -152,7 +174,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      if(route==='POST /api/story/prose')return json(res,202,await writeSceneProse(p,b.scene));
      if(route==='POST /api/inspect')return json(res,200,await game.read(p,b.op,b.args||{}));
      if(route==='POST /api/action')return json(res,200,await execute(p,b.op,b.args,b.requestId));
-     if(route==='POST /api/agent'){if(!b.text?.trim())throw new Error('Enter a request.');if(b.mode!=null&&!['chat','game'].includes(b.mode))throw new Error('Choose Talk to Codex or Act in game.');if(b.mode!=='game'&&/catch me up|what (?:did i miss|changed)|summari[sz]e.*(?:missed|recent|events)/i.test(b.text)){return json(res,202,await startRecap(p,{range:'unread',question:b.text}));}await runAgent(p,b.text,b.mode==='game'?'game':['atlas','suggestions'].includes(b.purpose)?b.purpose:'chat');return json(res,202,{ok:true});}
+     if(route==='POST /api/agent'){if(!b.text?.trim())throw new Error('Enter a request.');if(b.mode!=null&&!['chat','game'].includes(b.mode))throw new Error('Choose Talk to Codex or Act in game.');if(b.mode!=='game'&&/catch me up|what (?:did i miss|changed)|summari[sz]e.*(?:missed|recent|events)/i.test(b.text)){return json(res,202,await startRecap(p,{range:'unread',question:b.text}));}await runAgent(p,b.text,b.mode==='game'?'game':['atlas','suggestions','quests'].includes(b.purpose)?b.purpose:'chat');return json(res,202,{ok:true});}
      if(route==='POST /api/agent/connect')return json(res,200,demo?{connected:true,demo:true,models:[]}:await agent.start());
      if(route==='POST /api/agent/stop'){c.stopRequested=true;await agent.stopThread(c.activeThread);return json(res,200,{ok:true});}
      if(route==='POST /api/agent/reset'){if(c.agentStatus==='working')throw new Error('Stop the current reply first.');c.sessions??=[];c.sessions.push({time:new Date().toISOString(),messages:c.messages});c.messages=[];c.threadId=null;await store.save();return json(res,200,packet(id));}
@@ -162,6 +184,12 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
        if(typeof b.liveFeed==='boolean')p.liveFeed=b.liveFeed;
        if(typeof b.model==='string')store.data.model=b.model;if(typeof b.instructions==='string')p.instructions=b.instructions;if(['manual','suggest'].includes(b.mode))p.mode=b.mode;
        await store.save();return json(res,200,packet(id));
+     }
+     if(route==='POST /api/records'){
+       if(!['quest','memory','note'].includes(b.kind))throw new Error('Choose a journal entry type.');
+       if(b.status&&!questStatuses.includes(b.status))throw new Error('Unknown quest status.');
+       const saved=applyRecords(c,[{...b,sourceSeqs:b.sources||[]}],{allowed:[b.kind]});
+       if(!saved.length)throw new Error('Enter a title and text.');await store.save();return json(res,200,{saved});
      }
      if(route==='POST /api/local'){for(const key of ['draft','organization','notes'])if(b[key]!==undefined)c[key]=b[key];await store.save();return json(res,200,{ok:true});}
      if(route==='POST /api/map'){const m=b.map;if(!m||!Array.isArray(m.nodes)||m.nodes.length>100||!Array.isArray(m.edges))throw new Error('Invalid map.');c.maps.push({...m,id:randomUUID(),created:new Date().toISOString(),sourceCursor:c.state?.cursor,location:c.state?.here?.id});await store.save();return json(res,200,{ok:true});}
@@ -265,7 +293,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
    }catch(e){json(res,400,{error:e.message});}
  });
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
- const background=setInterval(async()=>{for(const p of store.data.profiles){const c=store.character(p.id);if(p.mode!=='suggest'||c.agentStatus==='working'||Date.now()-(c.lastSuggestedAt||0)<300000)continue;try{await game.refresh(p);if(c.state?.connection==='Saved observation')continue;if(c.lastSuggestedCursor===c.state?.cursor)continue;c.lastSuggestedCursor=c.state.cursor;c.lastSuggestedAt=Date.now();await runAgent(p,'Review the current situation and prepare up to three useful next actions for my approval. Do not repeat pending suggestions.','suggestions');}catch{}}},60000);background.unref();
+ const background=setInterval(async()=>{for(const p of store.data.profiles){const c=store.character(p.id);if(p.mode!=='suggest'||c.agentStatus==='working'||Date.now()-(c.lastSuggestedAt||0)<300000)continue;try{await game.refresh(p);if(c.state?.connection==='Saved observation')continue;if(c.lastSuggestedCursor===c.state?.cursor)continue;c.lastSuggestedCursor=c.state.cursor;c.lastSuggestedAt=Date.now();await runAgent(p,'Discover new quests in the story.','quests');}catch{}}},60000);background.unref();
  let liveBusy=false;
  nextLiveAt=Date.now()+liveIntervalMs;
  const liveTimer=setInterval(async()=>{

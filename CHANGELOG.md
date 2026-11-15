@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Replaced Approvals with evidence-backed quest discovery and progress tracking; added conversational local quest/memory saving.
+- Split People & relationships into its own tab, moved places to Atlas, and added durable observed-document copies to Journal.
+
 - Denser detailed-log entries with timestamp-adjacent record popovers that overlay the UI without expanding rows.
 - Separate Auto prose model selection, quieter storyboard chapters, and subtle scene rails in the detailed log that remain aligned when filtering.
 - Newest-first, collapsible compact scene cards, automatic book-style prose incorporating player dialogue and actions, and short inner-reflection summaries.

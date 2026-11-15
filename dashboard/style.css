@@ -430,3 +430,9 @@
 .log-record-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px}
 .log-record-heading button{padding:1px 6px;font-size:17px}
 .log-record-popover pre{font:11px/1.5 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;margin:10px 0 0}
+.atlas-places{margin-top:20px}
+.document-entry{display:block;width:100%;text-align:left;margin:0 0 8px}
+.quest-card p{white-space:pre-wrap;overflow-wrap:anywhere}
+.quest-card details{margin-top:10px;font-size:11px}
+#quest-progress{color:var(--muted);font-size:12px}
+#page-queue>.panel{margin-top:20px}

@@ -2,6 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+import {captureDocuments} from './journal.mjs';
 import { historicalNames } from './story.mjs';
 export const defaultPrompt = `You are my companion in The Glass Reach. Describe the world clearly and preserve spoken dialogue verbatim. Distinguish witnessed facts, other characters' claims, and your interpretations. Use only the selected character's knowledge. Explain relevant choices without inventing outcomes. Prepare concrete game actions for my approval; never claim a proposed action has happened. Keep replies focused and atmospheric. When unsure, say what is unknown.`;
 export class Store {
@@ -22,6 +23,7 @@ export class Store {
         rule.outcome=request?.result?.reason||(rule.status==='complete'?'Game confirmed the command.':'The server restarted during delivery. Check the game record.');
       }
     }
+    for(const c of Object.values(this.data.characters))if(c.state){captureDocuments(c,c.state.holding||[]);c.people??=c.state.knows||[];}
     await this.save(); return this;
   }
   profile(id) { const p=this.data.profiles.find(x=>x.id===id); if(!p) throw new Error('Character profile not found.'); return p; }
@@ -46,6 +48,8 @@ export function ingest(c, raw, events=[]) {
   const edges=(previous?.edges||[]).filter(e=>e.from!==raw.here.id);
   for(const e of raw.exits||[]) edges.push({...e,from:raw.here.id,observedAt:new Date().toISOString()});
   c.state={...raw,places,edges,updated:new Date().toISOString(),connection:'Live'};
+  captureDocuments(c,raw.holding||[]);
+  c.people=unique([...(c.people||[]),...(raw.knows||[]).map(p=>({...p,id:p.who||p.id}))].map(p=>({...p,id:p.who||p.id})));
   c.historyCursor=Math.max(c.historyCursor||0,...events.map(e=>Number(e.seq)||0));
   return c.state;
 }

@@ -26,6 +26,6 @@ Evidence references help you trace a quest back to the recorded story. Treat inf
 
 The quest list is local to the harness. Changing a status does not complete an engine objective or make your character act. The separate **In-game intentions** section shows game records; **Add intention in game** prepares a game operation for review.
 
-To discover quests automatically, use **Watch & automation → While I'm elsewhere**. This uses Codex and does not authorize game actions.
+To discover quests automatically, use **Automation → While I'm elsewhere**. This uses Codex and does not authorize game actions.
 
-Related: [Play](Play.md) · [Journal](Journal.md) · [Watch & automation](Watch-and-automation.md)
+Related: [Play](Play.md) · [Journal](Journal.md) · [Automation](Watch-and-automation.md)

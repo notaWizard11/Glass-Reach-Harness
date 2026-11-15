@@ -17,7 +17,7 @@ export function mountAutopilot({api,getData,getProfile,reload,openDialog,field,b
  <div class="inline"><button id="pilot-save">Save configuration</button><button id="pilot-start" class="primary">Review & start</button><button id="pilot-pause" class="danger">Pause autopilot</button></div>
  <p class="caption">Runs while the tab is in the background, with the server running and PC awake. Each decision uses Codex. Sending a message or manual game action pauses autopilot. Server restarts require you to start it again. Pause cannot undo an action already sent.</p>
  <details><summary>Autopilot activity</summary><div id="pilot-log"></div></details>`;
- document.getElementById('watch-controls').prepend(panel);
+ document.getElementById('automation-pilot-host').append(panel);
  const $=id=>panel.querySelector('#'+id);let dirty=false,activeProfile,logSignature='',placesSignature='';
  panel.addEventListener('input',()=>{dirty=true;});panel.addEventListener('change',()=>{dirty=true;});
  function config(){return {prompt:$('pilot-prompt').value,permissions:Object.fromEntries([...panel.querySelectorAll('[data-pilot-permission]')].map(x=>[x.dataset.pilotPermission,x.checked])),interval:Number($('pilot-interval').value),minutes:Number($('pilot-minutes').value),maxActions:Number($('pilot-actions').value),maxDecisions:Number($('pilot-decisions').value),locations:[...panel.querySelectorAll('[data-pilot-location]:checked')].map(x=>x.value)};}

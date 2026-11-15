@@ -16,6 +16,8 @@ This section presents recorded connections and their direction. Pay attention to
 
 Technical report details are available from the small record control at the top right. It opens over the surrounding content so you can inspect the source without expanding the whole layout.
 
+For a current spatial view, use [Atlas](Atlas.md). Visible characters with reported coordinates appear on the map; those without coordinates appear in Visible here. The atlas does not track last-seen positions.
+
 ## Use what you learn
 
 Use **Inner thoughts** for a private question such as “What do I know about my relationship with the scout?” Switch to **Act in game** to actually address someone. Looking up a person here does not contact them or make them reachable from your current location.

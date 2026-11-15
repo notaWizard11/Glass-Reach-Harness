@@ -1,33 +1,49 @@
 [Guide home](README.md)
 
-# Watch & automation
+# Automation
 
-Use this tab to decide what the harness should notice or do while you are occupied. The composer offers the same controls; settings are shared between the two views.
+The **Automation** tab contains watches, readied actions and autopilot. The composer's **Watch & automation** mode contains watches and readied actions, plus a shortcut to Automation; autopilot controls are only in the dedicated tab.
 
-| Feature | What it does |
+| Feature | Result |
 | --- | --- |
-| Notification watch | Alerts you when a selected condition occurs. |
-| Readied action | Sends an exact action or reply you approved in advance, once. |
-| Autopilot | Asks the selected model what to do within your goals, permissions and limits. |
+| Notification watch | Records a notification when its condition matches; no game command. |
+| Readied action | Sends one exact action or line of dialogue approved in advance. |
+| Autopilot | Uses Codex to choose actions within your goals, permissions and limits. |
 
-Keep the server running and the PC awake. These features can work with the browser in the background. Turning **Live** off does not disable them.
+Keep the server running and PC awake. Active watches and armed actions join the normal observation polling even when ordinary **Live** polling is off. Checks can be delayed by other requests and are not guaranteed to capture a short-lived state between observations.
 
-## Set a notification watch
+## Choose a shared trigger
 
-Choose a reply, arrival, low water or dusk, then choose **Set watch**. For a reply or arrival, enter the character's name. A watch notifies you; it does not make the character respond. **Public schedule** opens the game's schedule.
+Choose **Create notification watch** or **Ready an action**. Select a category button, then a trigger tag. Only relevant condition fields are shown.
 
-There is one active notification watch per profile. Watches are kept in memory, so set them again after restarting the server.
+| Category | Available conditions |
+| --- | --- |
+| Movement | A chosen character arrives, leaves, is present or absent; you reach a selected destination. |
+| Conversation | Speech addressed to you or speech nearby; optional speaker and case-insensitive phrase filter. |
+| Resources | Water or HP at or below a configured threshold; health drops between observations. |
+| Combat | An attack, hit or miss against you, optionally from a selected attacker; a chosen visible character (or yourself) is wounded or downed. |
+| Inventory | An item ID enters or leaves your observed inventory; blank matches any item. This compares IDs, not changes in a stack's quantity. |
+| Environment | An exact reported time-of-day value or weather containing your text. |
+| Timing | Real-time delay in minutes from arming, or an absolute game-time deadline in seconds. |
+| Actions | A specified verb, optionally for a target ID, is reported available by the game. |
 
-## Ready an exact action
+Choose **Where I arm this**, **Selected location**, or **Anywhere in this world** as the location scope. Scope checks where your character is when the condition is evaluated. For a destination trigger, select Anywhere or the destination as scope so leaving the starting location does not prevent it from firing. An absent character means not present in your observation, not a proven location elsewhere.
 
-1. Choose **Ready an action**.
-2. Pick a trigger: a chosen person's arrival, their reply (optionally containing a phrase), water at or below 3, or dusk.
-3. Enter the exact reply or game action, and choose an expiry.
-4. Review and approve it before arming.
+Choose **Fire if already true** for state conditions that may fire at the next check, or **Wait until it becomes true** to wait for a false-to-true change. New-event triggers only use events after arming, regardless of that choice. Inventory and health-drop conditions compare successive observations.
 
-You can keep up to 12 readied actions per character. Each fires once, subject to its character, location and expiry checks. Water or dusk triggers may fire immediately if already true. Use **Edit & review** to revise an entry or **Disarm** to cancel it.
+## Notification watches
 
-Armed actions survive a server restart until they fire, expire or are disarmed. An uncertain delivery is not automatically retried. Disarming cannot undo an action already sent.
+Set an expiry of 5, 15, 30, 60 or 120 real-time minutes, then choose **Set watch**. There can be up to 12 active notification watches per profile. Each notifies once, or ends on expiry or a changed character/world connection. Remove a watch to cancel it. **Public schedule** displays the game's schedule.
+
+Watches are held in memory and must be set again after restarting the server. They do not use a model or send an automatic reply.
+
+## Readied actions
+
+Choose an exact line of dialogue or an exposed game action and its inputs. Select an expiry, then **Review command** and **Approve & arm**. A delay must be shorter than the expiry.
+
+Up to 12 readied actions can be armed per character. Each fires once within its approved world, location scope and expiry. State conditions are checked again before dispatch. **Edit & review** changes a rule after approval; **Disarm** cancels it. The exact command is fixed: the harness does not ask a model to choose a new target or response when the trigger fires.
+
+Armed actions survive server restarts until triggered, expired or disarmed. Interrupted or uncertain deliveries are not automatically retried. Disarming cannot undo a command already sent.
 
 ## Configure autopilot
 

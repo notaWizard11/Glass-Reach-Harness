@@ -1,3 +1,6 @@
+import {mountResponseNotifications} from './response-notifications.mjs';
+import {triggerEditor,triggerSummary} from './trigger-ui.js';
+import {liveAtlas,jumpAtlas} from './atlas-ui.js';
 import {mountRules} from './rules-ui.js';
 import {mountAutopilot} from './autopilot-ui.js';
 import {knownPeople,relationshipGroups} from './people.mjs';
@@ -123,6 +126,7 @@ function checkStorySound(data){
   if(sameCharacter&&hasNewEntry)playStoryChime();
 }
 let data=null,profile=localStorage.getItem('gr-profile')||'aaron',csrf='',page=localStorage.getItem('gr-page')||'play',offline=false,busy=false,shownEvents=80,mapId=null,settingsDirty=false,draftTimer,toastTimer;
+const responseNotifications=mountResponseNotifications({composer:document.querySelector('.composer'),toggle:$('response-notifications-toggle'),host:$('response-notifications'),getPage:()=>page,getProfile:()=>profile,onPlay:()=>setPage('play')});
 let composeMode='chat',modelsLoaded=false,modelsLoading=false;
 const modelSelectIds=['model','model-chat','model-game','model-prose','model-autopilot','model-atlas','model-suggestions'];
 function fillModels(models){for(const id of modelSelectIds){const select=$(id),selected=settingsDirty?select.value:id==='model'?data.model||'':data.modelsByPurpose?.[id.slice(6)]||'';select.replaceChildren();const base=el('option',id==='model'?'Account default':'Use general model');base.value='';select.append(base);for(const m of models){const o=el('option',m.displayName||m.model);o.value=m.model;select.append(o);}if(selected&&![...select.options].some(o=>o.value===selected)){const o=el('option',selected+' (saved choice)');o.value=selected;select.append(o);}select.value=selected;}}
@@ -138,7 +142,7 @@ function selectAtlasView(scenes){
 async function previewScene(scene,selected=profile){
   sceneId=scene.id;
   const version=++scenePreviewVersion;
-  $('scene-title').textContent=scene.title;
+  $('scene-preview-title').textContent=scene.title;
   $('scene-download').hidden=true;
   $('scene-preview').textContent='Loading image…';
   try{
@@ -159,7 +163,7 @@ async function previewScene(scene,selected=profile){
     if(profile===selected&&version===scenePreviewVersion)$('scene-preview').textContent=error.message;
   }
 }
-$('atlas-diagrams').onclick=()=>selectAtlasView(false);
+$('atlas-diagrams').onclick=()=>{selectAtlasView(false);mapId=null;renderAtlas();};
 $('atlas-scenes').onclick=()=>selectAtlasView(true);
 $('scene-generate').onclick=async()=>{
   const selected=profile;
@@ -170,7 +174,7 @@ $('scene-generate').onclick=async()=>{
     const scene=await api('scene-image',{description:$('scene-request').value},selected);
     await load(selected);
     if(profile!==selected)return;
-    await previewScene(scene,selected);
+    await previewScene(scene,selected);selectAtlasView(true);$('image-commission-menu').hidePopover();
     $('scene-status').textContent='Image saved to Atlas.';
   }catch(error){
     if(profile===selected)$('scene-status').textContent=error.message;
@@ -205,7 +209,7 @@ function renderScenes(){
       ++scenePreviewVersion;
       if(sceneImageUrl)URL.revokeObjectURL(sceneImageUrl);
       sceneImageUrl=null;
-      $('scene-title').textContent='Scene preview';
+      $('scene-preview-title').textContent='Scene preview';
       $('scene-download').hidden=true;
       empty($('scene-preview'),'Generate or select a scene image.');
     }
@@ -234,7 +238,7 @@ function person(){return state().you?.state||{};}
 function name(id){if(!id)return 'The scene';if(data?.names?.[id])return data.names[id];const s=state();return [s.you,s.here,...(s.present||[]),...(s.holding||[]),...(s.places||[]),...(data.people||s.knows||[]).map(x=>({id:x.who,...x}))].find(x=>x?.id===id)?.name||'Someone / something unrecorded';}
 function entities(){const s=state();return [s.you,s.here,...(s.holding||[]),...(s.present||[]),...(s.places||[]),...(data.people||[])].filter(Boolean);}
 function empty(target,text){target.replaceChildren(el('p',text,'empty'));}
-function setPage(next){if(!$('page-'+next))next='play';page=next;localStorage.setItem('gr-page',next);for(const n of document.querySelectorAll('.page'))n.hidden=n.id!=='page-'+next;for(const b of document.querySelectorAll('[data-page]')){b.classList.toggle('selected',b.dataset.page===next);b.setAttribute('aria-current',b.dataset.page===next?'page':'false');}placeWatchControls();if(next==='atlas')renderAtlas();if(next==='settings'&&data&&!modelsLoaded)connectModels();}
+function setPage(next){if(!$('page-'+next))next='play';page=next;responseNotifications.context();localStorage.setItem('gr-page',next);for(const n of document.querySelectorAll('.page'))n.hidden=n.id!=='page-'+next;for(const b of document.querySelectorAll('[data-page]')){b.classList.toggle('selected',b.dataset.page===next);b.setAttribute('aria-current',b.dataset.page===next?'page':'false');}placeWatchControls();if(next==='atlas')renderAtlas();if(next==='settings'&&data&&!modelsLoaded)connectModels();}
 const watchComposer=$('watch-controls').parentElement;
 function placeWatchControls(){
   const onPage=page==='watch';
@@ -284,7 +288,7 @@ function logRecordMeta(time,value,label,key){
  meta.append(trigger);return meta;
 }
 function paragraph(parent,text,cls){parent.append(el('p',text,cls));}
-async function load(selected=profile){const r=await api('session',undefined,selected);if(profile!==selected)return;csrf=r.csrf;offline=false;data=r;checkStorySound(r);render();try{localStorage.setItem('gr-saved-'+profile,JSON.stringify({...r,csrf:undefined}));}catch{}}
+async function load(selected=profile){const r=await api('session',undefined,selected);if(profile!==selected)return;csrf=r.csrf;offline=false;data=r;checkStorySound(r);render();responseNotifications.update(selected,r);try{localStorage.setItem('gr-saved-'+profile,JSON.stringify({...r,csrf:undefined}));}catch{}}
 async function refresh(){if(busy||!data)return;const selected=profile;busy=true;$('refresh').disabled=true;try{const r=await api('refresh',{},selected);if(profile===selected){data=r;csrf=r.csrf;offline=false;checkStorySound(r);render();}}catch(e){offline=true;toast(e.message);renderConnection();}finally{busy=false;$('refresh').disabled=false;}}
 function renderConnection(){renderLiveActivity();const s=state();$('connection').textContent=offline?'Offline · saved ledger':data?.demo?'Fictional preview':s.connection||'Not connected';$('connection').classList.toggle('live',s.connection==='Live'&&!offline);$('notice').hidden=!(offline||data?.demo||s.problem||s.connection==='Saved observation');$('notice').textContent=offline?'Connection lost. Saved information and your draft remain available. Reconnect before sending.':data?.demo?'FICTIONAL PREVIEW · All characters, replies, and actions in this view are simulated.':s.problem||'Showing saved observations. Sync to check the current situation.';}
 function render(){if(!data)return;const s=state(),p=person();$('auto').checked=data.profile.liveFeed!==false;renderConnection();renderScenes();
@@ -292,13 +296,13 @@ function render(){if(!data)return;const s=state(),p=person();$('auto').checked=d
  $('scene-title').textContent=s.here?.name||'No observations yet';$('scene-description').textContent=s.here?.state?.description||'Connect this character to begin observing the world.';$('scene-weather').textContent=s.ambient?.weather||'';$('scene-time').textContent=s.ambient?.time_of_day||'';$('scene-day').textContent=s.t!=null?'DAY '+(Math.floor(s.t/86400)+1):'—';
  $('character-name').textContent=s.you?.name||data.profile.name;$('composer-character').textContent=data.profile.name;
  change('vitals',p,()=>{renderVitals($('vitals'),p);renderSheet();});
- change('graph',[s.here,s.edges,s.places],()=>{if(page==='atlas'&&!mapId)renderAtlas();});
+ change('graph',[s.here,s.edges,s.places,s.layout,s.present,s.connection,data.atlasWorlds],()=>{if(page==='atlas'&&!mapId)renderAtlas();});
  change('nearby',s.present,()=>{const people=(s.present||[]).filter(x=>['person','agent','fighter','hireling','drifter'].includes(x.type)||x.state?.hp!=null);$('nearby-count').textContent=people.length;$('nearby').replaceChildren(...people.map(x=>entityRow(x)));$('features').replaceChildren(...(s.present||[]).filter(x=>!people.includes(x)).map(x=>entityRow(x)));if(!people.length)empty($('nearby'),'No characters recorded nearby.');});
  change('inventory',[s.holding,data.organization],renderInventory);
  change('journal',[s.knows,data.people,s.present,s.relations,s.goals,p.memory,data.journalMemories,data.notes,data.documents,s.places,s.holding],renderJournal);
  renderEvents();storyboard.update();renderActions();renderQuests();renderReadied();autopilotUI.update();rulesUI.update();
- change('maps',data.maps,()=>{$('map-list').replaceChildren(...[...(data.maps||[])].reverse().map(m=>{const b=button(m.title,()=>{mapId=m.id;renderAtlas();},'map-entry');b.append(el('small',new Date(m.created).toLocaleString()));return b;}));if(page==='atlas')renderAtlas();});
- change('watches',data.watchers,()=>{$('watches').replaceChildren(...(data.watchers||[]).map(w=>{const row=el('div',w.kind+' '+w.value+' · '+w.status,'note');if(w.error)row.append(el('small',w.error));row.append(button('Remove',async()=>{await api('watch',{stop:w.id});await load();},'quiet'));return row;}));});
+ change('maps',data.maps,()=>{$('map-list').replaceChildren(...[...(data.maps||[])].reverse().map(m=>{const b=button(m.title,()=>{mapId=m.id;renderAtlas();$('map-commission-menu').hidePopover();},'map-entry');b.append(el('small',new Date(m.created).toLocaleString()));return b;}));if(page==='atlas')renderAtlas();});
+ change('watches',data.watchers,()=>{$('watches').replaceChildren(...(data.watchers||[]).map(w=>{const row=el('div',(w.trigger?triggerSummary(w.trigger):w.kind+' '+w.value)+' · '+w.status,'note');if(w.error)row.append(el('small',w.error));row.append(button('Remove',async()=>{await api('watch',{stop:w.id});await load();},'quiet'));return row;}));});
  $('agent-status').textContent=data.agentStatus==='working'?'Thinking…':data.agentStatus==='error'?'Check reply':'Ready';$('stop-agent').hidden=data.agentStatus!=='working';$('watch-stop-agent').hidden=data.agentStatus!=='working';$('control-mode').value=data.profile.mode||'manual';
  if(!settingsDirty){for(const key of ['chat','game','prose','atlas','suggestions','autopilot']){const select=$('model-'+key),value=data.modelsByPurpose?.[key]||'';if(value&&![...select.options].some(o=>o.value===value)){const o=el('option',value);o.value=value;select.append(o);}select.value=value;}if(data.model&&![...$('model').options].some(o=>o.value===data.model)){const o=el('option',data.model);o.value=data.model;$('model').append(o);}$('model').value=data.model||'';$('master-prompt').value=data.masterPrompt||'';$('character-prompt').value=data.profile.instructions||'';}
  change('versions',data.promptVersions,()=>{$('prompt-history').replaceChildren(el('option','Choose a saved version…'),...(data.promptVersions||[]).map((v,i)=>{const o=el('option',new Date(v.time).toLocaleString());o.value=i;return o;}));$('prompt-history').firstChild.value='';});
@@ -351,7 +355,7 @@ function renderJournal(){const s=state();renderPeople();
  $('memories').replaceChildren(...[...(data.journalMemories||[])].reverse().map(n=>{const d=el('div',n.text,'note');d.prepend(el('small','SAVED JOURNAL MEMORY · '+n.title));d.append(button('Edit',()=>recordForm('memory',n),'quiet'));return d;}),...[...(person().memory||[])].reverse().map(n=>{const d=el('div',n.text,'note');d.prepend(el('small','CHARACTER MEMORY'));return d;}));
  for(const id of ['goals']){$(id).replaceChildren(...(s.goals||[]).filter(g=>g.status==='active'||!g.status).map(g=>{const n=el('div',null,'goal');n.append(el('span',g.text));if(id==='goals')n.append(button('Done',()=>genericAction('intend',{id:g.id,status:'done'},'Complete this goal')));return n;}));if(!$(id).children.length)empty($(id),'No active intentions recorded.');}
  $('documents').replaceChildren(...(data.documents||[]).map(doc=>{const row=button(doc.title,()=>{const root=openDialog(doc.title);paragraph(root,doc.text);paragraph(root,'Saved when seen · '+new Date(doc.lastSeen).toLocaleString()+(doc.location?' · '+doc.location:''),'caption');if(doc.versions?.length)root.append(details(doc.versions,'Earlier observed versions'));},'document-entry');return row;}));if(!data.documents?.length)empty($('documents'),'Documents are archived when their text is observed or inspected.');
- $('places').replaceChildren(...(s.places||[]).map(x=>entityRow(x)));
+
 }
 const movement=new Set(['arrived','left','moved','following','stayed','boarded','alighted']),combat=new Set(['checked','hit','missed','attacked','hurt','wounded','healed','downed','died','warded','rose','yielded']),items=new Set(['given','taken','put','dropped','found','shown','read','wrote','filled','drank','bound','released']);
 function eventText(e){const p=e.payload||{},who=name(p.by||p.who||p.entity||e.actor);if(p.text)return p.text;switch(e.kind){case'arrived':return who+' arrived'+(p.following?' following '+name(p.following):'')+'.';case'left':return who+' left'+(p.to?' for '+name(p.to):'')+'.';case'moved':return who+' moved to '+name(p.to)+'.';case'checked':return (p.skill||'Check')+': '+(p.roll!=null?'rolled '+p.roll+' + '+(p.mod||0)+' = ':'')+p.total+' vs '+p.dc+' · '+(p.success?'Passed':'Missed');case'given':return who+' gave '+name(p.item)+' to '+name(e.target)+'.';case'found':return who+' discovered '+name(p.thing)+'.';case'drank':return who+' drank'+(p.water!=null?' · water now '+p.water:'')+'.';case'hit':return who+' hit '+name(e.target)+' for '+(p.dmg??'?')+(Number.isFinite(p.hp)?' · '+p.hp+' HP remaining':'');case'progressed':return (p.skill||'Skill')+' progressed · '+(p.how||'');case'sweated':return 'Water cost: '+p.cost+' · remaining '+p.water;case'act':return (p.verb||'Action')+' '+(p.target?name(p.target):'');default:return e.kind.replaceAll('_',' ')+(p.why?' · '+p.why:'')+(p.name?' · '+p.name:'');}}
@@ -365,17 +369,13 @@ function renderQuests(){const quests=data.quests||[];const filter=$('quest-filte
 function observedMap(){const s=state(),current=s.here?.id;if(!current)return {nodes:[],edges:[]};const names=new Map((s.places||[]).map(x=>[x.id,x.name]));names.set(current,s.here.name);const edges=(s.edges||[]).map(e=>({from:e.from,to:e.to,uncertain:false,locked:e.locked}));for(const e of s.edges||[])names.set(e.to,e.name||names.get(e.to)||'Known place');const distance=new Map([[current,0]]),queue=[current];while(queue.length){const id=queue.shift();for(const e of edges){const next=e.from===id?e.to:e.to===id?e.from:null;if(next&&!distance.has(next)){distance.set(next,distance.get(id)+1);queue.push(next);}}}const rings=new Map();for(const [id,d]of distance)if(d){if(!rings.has(d))rings.set(d,[]);rings.get(d).push(id);}const max=Math.max(1,...rings.keys()),nodes=[{id:current,label:s.here.name,x:50,y:50,note:'Current location'}];for(const [d,ids]of rings)ids.slice(0,30).forEach((id,i)=>{const a=2*Math.PI*i/ids.length-Math.PI/2+(d%2?.2:0),radius=40*d/max;nodes.push({id,label:names.get(id)||id,x:50+Math.cos(a)*radius,y:50+Math.sin(a)*radius,note:'Observed connection; may have changed'});});return {title:'Observed connections',description:'Schematic of observed routes. Distances are not to scale. Your current location is highlighted.',nodes,edges};}
 function svgEl(tag,attrs={},text){const n=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,String(v));if(text!=null)n.textContent=text;return n;}
 function graph(map,compact=false){const palette=getComputedStyle(document.documentElement);const svg=svgEl('svg',{viewBox:'0 0 800 600',role:'img','aria-label':map.title||'Connections around your location'});svg.append(svgEl('title',{},map.title||'Connections'),svgEl('rect',{width:800,height:600,fill:palette.getPropertyValue('--map-bg').trim()}));const nodes=new Map((map.nodes||[]).map(n=>[n.id,{...n,x:70+Math.max(0,Math.min(100,Number(n.x)||0))*6.6,y:55+Math.max(0,Math.min(100,Number(n.y)||0))*4.9}]));for(const e of map.edges||[]){const a=nodes.get(e.from),b=nodes.get(e.to);if(a&&b)svg.append(svgEl('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:e.locked?palette.getPropertyValue('--map-locked').trim():palette.getPropertyValue('--map-edge').trim(),'stroke-width':2,'stroke-dasharray':e.uncertain||e.locked?'7 6':'none'}));}for(const n of nodes.values()){const g=svgEl('g',{tabindex:0,role:'button','aria-label':n.label});const current=n.id===state().here?.id;g.append(svgEl('circle',{cx:n.x,cy:n.y,r:current?23:15,fill:current?palette.getPropertyValue('--map-current').trim():palette.getPropertyValue('--map-node').trim(),stroke:current?palette.getPropertyValue('--map-current-line').trim():palette.getPropertyValue('--map-node-line').trim(),'stroke-width':2}),svgEl('text',{x:n.x,y:n.y+40,'text-anchor':'middle',fill:current?palette.getPropertyValue('--map-current-text').trim():palette.getPropertyValue('--map-text').trim(),'font-size':compact?24:18},String(n.label).slice(0,28)),svgEl('title',{},n.label+' — '+(n.note||'')));g.addEventListener('click',()=>openEntity(n.id));g.addEventListener('keydown',e=>{if(e.key==='Enter')openEntity(n.id);});svg.append(g);}return svg;}
-function renderAtlas(){if(!data)return;const map=(data.maps||[]).find(m=>m.id===mapId)||observedMap();$('atlas-title').textContent=map.title;$('atlas-canvas').replaceChildren(graph(map));$('atlas-description').textContent=map.description||'';const svg=$('atlas-canvas').firstChild;if(svg)svg.style.width=$('map-zoom').value+'%';}
+function renderAtlas(){if(!data)return;if(!mapId){liveAtlas(data,state(),openDialog,id=>{mapId=null;renderAtlas();jumpAtlas(id);});return;}const map=(data.maps||[]).find(m=>m.id===mapId)||observedMap();$('atlas-title').textContent=map.title;$('atlas-canvas').replaceChildren(graph(map));$('atlas-description').textContent=map.description||'';const svg=$('atlas-canvas').firstChild;if(svg){const slider=$('map-zoom');slider.min=75;slider.max=200;slider.step=5;slider.value=100;svg.style.width='100%';slider.oninput=()=>svg.style.width=slider.value+'%';}}
 function field(parent,label,type='text',value='',options){const l=el('label',label);let input;if(options){input=el('select');for(const [v,t]of options){const o=el('option',t);o.value=v;input.append(o);}}else input=el(type==='textarea'?'textarea':'input');if(type!=='textarea'&&!options)input.type=type;input.value=value??'';l.append(input);parent.append(l);return input;}
 function actionForm(a){const root=openDialog(a.verb.replaceAll('_',' ')+' · '+(a.target_name||'Yourself'));paragraph(root,a.doc||'Review the action before sending it.');if(a.reason)paragraph(root,'Last observation: '+a.reason,'field-help');const params={},inputs={};for(const [key,doc]of Object.entries(a.params||{})){const opts=key==='item'? [['','Choose an item…'],...(state().holding||[]).map(i=>[i.id,i.name])]:null;inputs[key]=field(root,key+' — '+(typeof doc==='string'?doc:JSON.stringify(doc)),['text','offer','word'].includes(key)?'textarea':'text','',opts);}const help=el('p','This performs a game action as '+data.profile.name+'.','field-help');root.append(help,button('Send action',async()=>{for(const [k,n]of Object.entries(inputs))if(n.value.trim())params[k]=parseValue(k,n.value);await perform('act',{verb:a.verb,...(a.target?{target:a.target}:{}),params});},'primary'));}
 function parseValue(k,v){if(['count','dc','priority','reach'].includes(k)&&Number.isFinite(Number(v)))return Number(v);if(['slow','sleep'].includes(k)&&['true','false'].includes(v))return v==='true';return v;}
 
-const triggerChoices=[['arrival','A character arrives'],['reply','A character speaks to me'],['water','My water is 3 or lower'],['dusk','It is dusk']];
 const readiedStatuses={armed:'Armed',executing:'Sending',complete:'Fired',refused:'Refused',expired:'Expired',cancelled:'Disarmed',uncertain:'Delivery uncertain'};
-function triggerText(trigger){
-  return triggerChoices.find(([kind])=>kind===trigger.kind)?.[1]+(trigger.person?' · '+name(trigger.person):'')
-    +(trigger.phrase?' · contains “'+trigger.phrase+'”':'');
-}
+function triggerText(trigger){return triggerSummary(trigger);}
 function commandText(op,args){
   if(op==='say')return 'Say “'+args.text+'” '+(args.to?'to '+name(args.to):'to everyone nearby');
   const params=Object.entries(args.params||{}).map(([key,value])=>key+' = '+JSON.stringify(value));
@@ -414,10 +414,7 @@ function readiedForm(rule,previous){
   for(const id of [draft.trigger?.person,draft.args?.to]){
     if(id&&!people.some(([value])=>value===id))people.push([id,name(id)]);
   }
-  const kind=field(root,'Trigger','text',draft.trigger?.kind||'arrival',triggerChoices);
-  const person=field(root,'Character','text',draft.trigger?.person,[['','Choose a character…'],...people]);
-  const phrase=field(root,'Phrase to match (optional)','text',draft.trigger?.phrase);
-  phrase.maxLength=200;
+  const getTrigger=triggerEditor(root,{state:s,draft:draft.trigger,field,button});
   const op=field(root,'When it triggers','text',draft.op||'say',[['say','Say an exact line'],['act','Perform a game action']]);
   const text=field(root,'Words to say','textarea',draft.op==='say'?draft.args.text:'');
   const to=field(root,'Addressed to','text',draft.args?.to,[['','Everyone nearby'],...people]);
@@ -448,18 +445,14 @@ function readiedForm(rule,previous){
   const minutes=field(root,'Keep ready for','text',String(draft.minutes||30),
     [5,15,30,60,120].map(n=>[String(n),n+' minutes']));
   function toggle(){
-    person.parentElement.hidden=!['arrival','reply'].includes(kind.value);
-    phrase.parentElement.hidden=kind.value!=='reply';
     for(const el of [text,to])el.parentElement.hidden=op.value!=='say';
     action.parentElement.hidden=parameters.hidden=op.value!=='act';
   }
-  kind.onchange=op.onchange=toggle;
+  op.onchange=toggle;
   action.onchange=()=>showParameters();
   showParameters(true);toggle();
   root.append(button('Review command',()=>{
-    if(['arrival','reply'].includes(kind.value)&&!person.value)throw new Error('Choose a character.');
-    const trigger={kind:kind.value,...(!person.parentElement.hidden?{person:person.value}:{}),
-      ...(!phrase.parentElement.hidden?{phrase:phrase.value.trim()}: {})};
+    const trigger=getTrigger();
     let args;
     if(op.value==='say'){
       if(!text.value.trim())throw new Error('Enter the line to say.');
@@ -477,7 +470,7 @@ function readiedForm(rule,previous){
     paragraph(review,triggerText(trigger));
     paragraph(review,commandText(approval.op,args),'review');
     review.append(details(args,'Exact command details'));
-    paragraph(review,'Fire once as '+s.you.name+' at '+s.here.name+' within '+approval.minutes+' minutes. Water and dusk triggers can fire immediately if already true.');
+    paragraph(review,'Fire once as '+s.you.name+' within '+approval.minutes+' minutes, using the scope and condition behaviour above.');
     if(rule)paragraph(review,'The current version stays armed until the edit is approved.');
     review.append(button('Back',()=>readiedForm(rule,approval)));
     const approve=button(rule?'Approve & update':'Approve & arm',async()=>{
@@ -504,21 +497,21 @@ function renderEntity(root,x){root.replaceChildren();paragraph(root,x.state?.des
  root.append(button('Inspect current game details',async()=>{const r=await api('inspect',{op:'inspect',args:{entity:x.id}});if(r.ok===false)throw new Error(r.reason);renderEntity(root,r);}),button('Recall our history',async()=>{const r=await api('inspect',{op:'recall',args:{about:x.id}});if(r.ok===false)throw new Error(r.reason);const d=openDialog('History · '+x.name);for(const e of r.exchanges||[])paragraph(d,e.text||e.kind);for(const n of r.notes||[])paragraph(d,n.text);d.append(details(r,'Relationships, goals & evidence'));}));root.append(details(x.state||x,'Reported properties'));
  if(x.state?.trip||x.state?.stages||x.state?.stage!=null||x.state?.needs){root.append(el('h3',x.state.trip?'Journey progress':'Work & materials'));root.append(details(x.state,'Current project / vehicle state'));}
 }
-async function sendAgent(text,purpose,mode='chat'){if(offline)throw new Error('Reconnect before sending.');await api('agent',{text,purpose,mode});await load();}
-async function send(){const text=$('draft').value.trim();if(!text||composeMode==='watch')return;const selected=profile;$('send').disabled=true;try{await sendAgent(text,undefined,composeMode);if(profile===selected&&$('draft').value.trim()===text){$('draft').value='';saveDraft();}$('send-status').textContent='Message sent.';}catch(e){toast(e.message);$('send-status').textContent=e.message;}finally{$('send').disabled=false;}}
+async function sendAgent(text,purpose,mode='chat',requestId){if(offline)throw new Error('Reconnect before sending.');const selected=profile;await api('agent',{text,purpose,mode,...(requestId?{requestId}:{})},selected);await load(selected);}
+async function send(){const text=$('draft').value.trim();if(!text||composeMode==='watch')return;const selected=profile,requestId=crypto.randomUUID();responseNotifications.track(requestId,composeMode);$('send').disabled=true;try{await sendAgent(text,undefined,composeMode,requestId);if(profile===selected&&$('draft').value.trim()===text){$('draft').value='';saveDraft();}$('send-status').textContent='Message sent.';}catch(e){responseNotifications.cancel(requestId);toast(e.message);$('send-status').textContent=e.message;}finally{$('send').disabled=false;}}
 
 function saveDraft(){const text=$('draft').value,selected=profile;localStorage.setItem('gr-draft-'+selected,text);clearTimeout(draftTimer);draftTimer=setTimeout(()=>api('local',{draft:text},selected).catch(()=>{}),500);}
 function setComposeMode(mode){composeMode=mode;for(const m of ['chat','game','watch'])$('mode-'+m).setAttribute('aria-pressed',String(mode===m));$('message-controls').hidden=mode==='watch';placeWatchControls();$('composer-help').textContent=mode==='game'?'Describe your actions or dialogue. The world responds; Stop pauses before the next step.':'Explore possibilities, ideas and questions. Inner thoughts do not act in the world.';$('draft').placeholder=mode==='game'?'What does your character do or say?':'Think it through…';$('send').textContent=mode==='game'?'Act ↗':'Reflect ↗';}
 $('mode-chat').onclick=()=>setComposeMode('chat');$('mode-game').onclick=()=>setComposeMode('game');$('mode-watch').onclick=()=>setComposeMode('watch');
-$('watch-kind').onchange=()=>{$('watch-person-label').hidden=['water','dusk'].includes($('watch-kind').value);};
+
 for(const id of ['play-stats','play-inventory']){const panel=$(id);panel.open=localStorage.getItem('gr-'+id)!=='closed';panel.addEventListener('toggle',()=>localStorage.setItem('gr-'+id,panel.open?'open':'closed'));}
 new ResizeObserver(()=>{document.documentElement.style.setProperty('--composer-height',document.querySelector('.composer').offsetHeight+'px');}).observe(document.querySelector('.composer'));
 
 $('draft').oninput=saveDraft;$('draft').onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();send();}};$('send').onclick=send;
 for(const b of document.querySelectorAll('[data-prompt]'))b.onclick=()=>{setComposeMode('chat');$('draft').value=b.dataset.prompt;saveDraft();$('draft').focus();};
-$('refresh').onclick=refresh;$('quick-map').onclick=()=>{setPage('atlas');selectAtlasView(false);$('map-request').focus();};
+$('refresh').onclick=refresh;$('quick-map').onclick=()=>{setPage('atlas');selectAtlasView(false);$('map-commission-menu').showPopover();$('map-request').focus();};
 $('feed-filter-options').onchange=saveStoryFilters;$('feed-search').oninput=renderEvents;$('action-search').oninput=renderActions;$('more-events').onclick=async()=>{const selected=profile;try{const all=[...(olderEvents.get(selected)||[]),...(data.events||[])],before=Math.min(...all.map(e=>e.seq));const rows=await api('history?before='+before,undefined,selected);olderEvents.set(selected,[...(olderEvents.get(selected)||[]),...rows]);if(profile===selected){shownEvents+=Math.max(100,rows.length);renderEvents();if(!rows.length)toast('All saved events are loaded.');}}catch(e){toast(e.message);}};
-$('character').onchange=async()=>{clearTimeout(draftTimer);await api('local',{draft:$('draft').value}).catch(()=>{});profile=$('character').value;localStorage.setItem('gr-profile',profile);fingerprints.clear();settingsDirty=false;mapId=null;shownEvents=80;$('drawer').close();await load();$('draft').value=localStorage.getItem('gr-draft-'+profile)??data.draft??'';};
+$('character').onchange=async()=>{clearTimeout(draftTimer);await api('local',{draft:$('draft').value}).catch(()=>{});profile=$('character').value;responseNotifications.context();localStorage.setItem('gr-profile',profile);fingerprints.clear();settingsDirty=false;mapId=null;shownEvents=80;$('drawer').close();await load();$('draft').value=localStorage.getItem('gr-draft-'+profile)??data.draft??'';};
 $('map-generate').onclick=()=>sendAgent('Create a visual diagram map. Scope: '+$('map-scope').value+'. '+$('map-request').value,'atlas').then(()=>toast('Map requested. It will appear in your atlas.')).catch(e=>toast(e.message));
 $('map-observed').onclick=async()=>{try{const map=observedMap();await api('map',{map});await load();mapId=data.maps.at(-1)?.id;renderAtlas();toast('Observed connections saved.');}catch(e){toast(e.message);}};
 $('map-zoom').oninput=renderAtlas;
@@ -540,9 +533,9 @@ $('reconnect').onclick=()=>genericAction('join',{entity:data.profile.entityId},'
 $('note-local').onclick=async()=>{const text=$('note-text').value.trim();if(!text)return;try{await api('local',{notes:[...(data.notes||[]),{id:crypto.randomUUID(),text,time:new Date().toISOString()}]});$('note-text').value='';await load();}catch(e){toast(e.message);}};
 $('note-game').onclick=()=>{const text=$('note-text').value.trim();if(text)genericAction('remember',{text},'Record character memory');};
 $('goal-add').onclick=()=>{const text=$('goal-text').value.trim();if(text)genericAction('intend',{text,why:'',priority:1},'Create character goal');};
-$('watch-start').onclick=async()=>{try{await api('watch',{kind:$('watch-kind').value,value:$('watch-value').value});await load();toast('Watch started while this server remains running.');}catch(e){toast(e.message);}};
+$('watch-start').onclick=()=>{const selected=profile,root=openDialog('Create notification watch'),getTrigger=triggerEditor(root,{state:state(),field,button});const minutes=field(root,'Watch for','text','30',[5,15,30,60,120].map(n=>[String(n),n+' minutes']));root.append(button('Set watch',async()=>{try{await api('watch',{trigger:getTrigger(),minutes:Number(minutes.value)},selected);$('drawer').close();await load(selected);}catch(e){toast(e.message);}},'primary'));};
 $('public-timers').onclick=async()=>{try{const r=await api('inspect',{op:'timers'});const root=openDialog('Public schedule');for(const t of Array.isArray(r)?r:[])paragraph(root,(t.name||t.kind||'Event')+' · '+Math.round((t.in??t.remaining??t.seconds??0)/60)+' game minutes');root.append(details(r,'Schedule details'));}catch(e){toast(e.message);}};
-$('manage').onclick=()=>{const root=openDialog('Add a character profile');paragraph(root,'Keep each character’s memories, conversation and suggestions separate. Reusing a game connection switches its single active seat when you reconnect.');const n=field(root,'Profile name'),id=field(root,'Existing character ID (leave empty to create from a template)'),token=field(root,'Separate game token (optional; encrypted on this PC)','password');root.append(button('Save profile',async()=>{const r=await api('profiles',{name:n.value,entityId:id.value,token:token.value});token.value='';profile=r.id;localStorage.setItem('gr-profile',profile);fingerprints.clear();settingsDirty=false;await load();$('draft').value='';$('drawer').close();setPage('settings');toast('Profile saved. Reconnect its seat or choose a template.');},'primary'));};
+$('manage').onclick=()=>{const root=openDialog('Add a character profile');paragraph(root,'Keep each character’s memories, conversation and suggestions separate. Reusing a game connection switches its single active seat when you reconnect.');const n=field(root,'Profile name'),id=field(root,'Existing character ID (leave empty to create from a template)'),token=field(root,'Separate game token (optional; encrypted on this PC)','password');root.append(button('Save profile',async()=>{const r=await api('profiles',{name:n.value,entityId:id.value,token:token.value});token.value='';profile=r.id;responseNotifications.context();localStorage.setItem('gr-profile',profile);fingerprints.clear();settingsDirty=false;await load();$('draft').value='';$('drawer').close();setPage('settings');toast('Profile saved. Reconnect its seat or choose a template.');},'primary'));};
 $('seats').onclick=async()=>{try{const r=await api('inspect',{op:'seats'});if(r.ok===false)throw new Error(r.reason);const root=$('seat-results');root.replaceChildren();for(const t of r.templates||[])root.append(button('Create '+t.template,()=>{const box=openDialog('Create a '+t.template);paragraph(box,t.doc||'Create a new character under this profile. This changes the active seat on its game connection.');const n=field(box,'Character name','text',data.profile.name),description=field(box,'Appearance (set when created)','textarea');box.append(button('Create character in game',()=>perform('join',{template:t.template,name:n.value,description:description.value}),'primary'));}));for(const seat of r.seats||[])root.append(el('p',(seat.name||seat.entity)+' · '+(seat.held||seat.embodied_by?'Occupied':'Seat listed')));root.append(details(r,'Seat availability details'));}catch(e){toast(e.message);}};
 const autopilotUI=mountAutopilot({api,getData:()=>data,getProfile:()=>profile,reload:load,openDialog,field,button,paragraph,details,onError:error=>toast(error.message),openSettings:()=>setPage('settings')});
 const storyboard=mountStoryboard({
@@ -555,3 +548,7 @@ $('auto').onchange=async()=>{renderLiveActivity();try{await api('settings',{live
 let loadingFeed=false;
 setInterval(async()=>{if(loadingFeed)return;loadingFeed=true;try{await load();}catch{offline=true;renderConnection();}finally{loadingFeed=false;}},1000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)load().catch(()=>{});});start();
+
+$('map-live').onclick=()=>{mapId=null;renderAtlas();$('map-commission-menu').hidePopover();};
+
+for(const [buttonId,menuId]of [['commission-map','map-commission-menu'],['commission-image','image-commission-menu']]){const button=$(buttonId),menu=$(menuId);button.onpointerenter=e=>{if(e.pointerType==='mouse'){for(const other of ['map-commission-menu','image-commission-menu'])if(other!==menuId)$(other).hidePopover();const box=button.getBoundingClientRect();menu.style.top=Math.min(box.bottom+8,window.innerHeight-120)+'px';menu.style.left=Math.max(12,Math.min(box.left,window.innerWidth-440))+'px';menu.showPopover();}};}

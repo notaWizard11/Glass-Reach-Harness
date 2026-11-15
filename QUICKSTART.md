@@ -51,3 +51,5 @@ Next time, launch from the same folder. Your records and encrypted token are sav
 - **Port already in use:** the launcher reuses an existing harness. If another program owns port 47381, close that program or choose another `PORT` before launching; do not start a second server against the same records.
 
 Next, explore the [section-by-section user guide](Documention/Guide/README.md) for help using every harness tab. See the [README](README.md) for background-operation limits, model usage, backups and updates.
+
+See [what changed](CHANGELOG.md), also displayed in **Rules & updates → Harness updates**.

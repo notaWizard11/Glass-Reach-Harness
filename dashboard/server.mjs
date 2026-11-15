@@ -1,3 +1,5 @@
+import {loadReleaseNotes} from './release-notes.mjs';
+import {normalizeTrigger,primeTrigger,evaluateTrigger} from './triggers.mjs';
 import { runGameTurn } from './game-turn.mjs';
 import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -61,17 +63,18 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
  let nextLiveAt=Date.now()+liveIntervalMs,liveChecking=null;
  const mobile=process.env.GLASS_REACH_MOBILE_ORIGIN?new URL(process.env.GLASS_REACH_MOBILE_ORIGIN):null,login=process.env.GLASS_REACH_MOBILE_LOGIN;
  if(mobile&&(mobile.protocol!=='https:'||!mobile.hostname.endsWith('.ts.net')||mobile.pathname!=='/'||!login))throw new Error('Private phone access requires an exact Tailscale HTTPS origin and login.');
- const assets={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/storyboard.js':['storyboard.js','text/javascript'],'/people.mjs':['people.mjs','text/javascript'],'/autopilot-ui.js':['autopilot-ui.js','text/javascript'],'/rules-ui.js':['rules-ui.js','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
+ const assets={'/response-notifications.mjs':['response-notifications.mjs','text/javascript'],'/CHANGELOG.md':['../CHANGELOG.md','text/markdown'],'/atlas-geometry.mjs':['atlas-geometry.mjs','text/javascript'],'/triggers.mjs':['triggers.mjs','text/javascript'],'/trigger-ui.js':['trigger-ui.js','text/javascript'],'/atlas-ui.js':['atlas-ui.js','text/javascript'],'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/storyboard.js':['storyboard.js','text/javascript'],'/people.mjs':['people.mjs','text/javascript'],'/autopilot-ui.js':['autopilot-ui.js','text/javascript'],'/rules-ui.js':['rules-ui.js','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
  async function body(req){let s='';for await(const chunk of req){s+=chunk;if(s.length>300000)throw new Error('Request is too large.');}return s?JSON.parse(s):{};}
  const json=(res,status,data)=>res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'}).end(JSON.stringify(data));
  const packet=id=>({...store.publicData(id),csrf,sceneIndex:buildScenes(store.character(id)).map(({id,title,start,end,startTime,endTime})=>({id,title,start,end,startTime,endTime})),
    liveNextAt:nextLiveAt,liveChecking:liveChecking===id,serverTime:Date.now(),
    sceneImageEnabled:!demo&&Boolean(process.env.OPENAI_API_KEY),sceneImageBusy:sceneRequests.has(id),
    watchers:[...watchers.values()].filter(x=>x.profileId===id).map(({timer,...x})=>x)});
- async function runAgent(p,text,purpose='chat'){
+ async function runAgent(p,text,purpose='chat',requestId){
+   const responseMeta=requestId?{requestId}:{};
    const c=store.character(p.id);if(c.agentStatus==='working')throw new Error('This character already has a response in progress.');
    const source={location:c.state?.here?.id,entity:p.entityId,cursor:c.state?.cursor};
-   c.stopRequested=false;c.agentStatus='working';c.agentProgress=0;c.agentPreview='';c.messages.push({id:randomUUID(),timelineSeq:c.state?.cursor||0,role:'user',mode:purpose==='game'?'game':'chat',text,time:new Date().toISOString()});await store.save();
+   c.stopRequested=false;c.agentStatus='working';c.agentProgress=0;c.agentPreview='';c.messages.push({...responseMeta,id:randomUUID(),timelineSeq:c.state?.cursor||0,role:'user',mode:purpose==='game'?'game':'chat',text,time:new Date().toISOString()});await store.save();
    (async()=>{try{
      let answer;
      if(purpose==='quests'){
@@ -89,12 +92,12 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
          count+=applyRecords(c,(result.records||[]).map(record=>({...record,sourceSeqs:(record.sourceSeqs||[]).filter(seq=>valid.has(seq))})),{allowed:['quest'],automatic:true}).length;
          c.questCursor=batch.at(-1).seq;await store.save();
        }
-       c.messages.push({id:randomUUID(),timelineSeq:c.state?.cursor||0,role:'notice',text:'Quest log updated: '+count+' new story thread'+(count===1?'':'s')+'. Existing quest progress was preserved.',time:new Date().toISOString()});c.agentStatus='idle';return;
+       c.messages.push({...responseMeta,id:randomUUID(),timelineSeq:c.state?.cursor||0,role:'notice',text:'Quest log updated: '+count+' new story thread'+(count===1?'':'s')+'. Existing quest progress was preserved.',time:new Date().toISOString()});c.agentStatus='idle';return;
      }
      if(purpose==='game'){
        const reply=await runGameTurn({profile:p,character:c,text,game,execute,save:()=>store.save(),cancelled:()=>c.stopRequested,
          plan:execution=>demo?Promise.resolve(execution.results.length?{reply:'You speak: “'+text+'”',suggestions:[]}:{reply:'',suggestions:[{title:'Speak your words in the fictional preview',op:'say',argumentsJson:JSON.stringify({text})}]}):agent.reply(p,text,'game',undefined,execution)});
-       c.messages.push({id:randomUUID(),timelineSeq:c.state?.cursor||0,role:'assistant',mode:'game',text:reply,time:new Date().toISOString()});c.agentStatus='idle';return;
+       c.messages.push({...responseMeta,id:randomUUID(),timelineSeq:c.state?.cursor||0,role:'assistant',mode:'game',text:reply,time:new Date().toISOString()});c.agentStatus='idle';return;
      }
      if(demo){const s=c.state;answer={reply:purpose==='atlas'?'I have charted the routes recorded in this fictional scene. This is a schematic, not a scale map.':'Sera is waiting at the gate, and the road is open. I could ask her about the lights, or examine the scout’s note before deciding.',suggestions:purpose==='atlas'?[]:[{title:'Ask Sera about the lights',reason:'She witnessed them from the road.',op:'say',argumentsJson:JSON.stringify({text:'Where did you see the three lights stop?',to:'sera'})}],map:purpose==='atlas'?{title:'Roads around '+s.here.name,description:text,nodes:[{id:s.here.id,label:s.here.name,x:50,y:50,note:'Current location'},...s.exits.map((e,i)=>({id:e.to,label:e.name,x:50+36*Math.cos(i*Math.PI*2/s.exits.length),y:50+36*Math.sin(i*Math.PI*2/s.exits.length),note:e.locked?'Locked route':'Observed exit'}))],edges:s.exits.map(e=>({from:s.here.id,to:e.to,uncertain:false}))}:null};}
      else answer=await agent.reply(p,text,purpose,t=>{c.agentProgress=t.length;const m=t.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/s);if(m){try{c.agentPreview=JSON.parse('"'+m[1].replace(/\\$/,'')+'"');}catch{}}});
@@ -102,11 +105,11 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      if(demo&&purpose==='chat')answer.records=recordPermissions(text).map(kind=>({kind,id:'',title:text.slice(0,100),text,status:'active',sourceSeqs:[c.events.at(-1)?.seq].filter(Boolean)}));
      const saved=applyRecords(c,answer.records,{allowed:purpose==='chat'?recordPermissions(text):[]});
      const confirmation=saved.length?'\n\nSaved locally: '+saved.map(record=>(record.kind==='quest'?'Quest':record.kind==='memory'?'Journal memory':'Note')+' — '+record.title).join('; ')+'.':'';
-     c.messages.push({id:randomUUID(),timelineSeq:c.state?.cursor||0,mode:'chat',role:'assistant',text:answer.reply+confirmation,time:new Date().toISOString()});
+     c.messages.push({...responseMeta,id:randomUUID(),timelineSeq:c.state?.cursor||0,mode:'chat',role:'assistant',text:answer.reply+confirmation,time:new Date().toISOString()});
      if(purpose==='suggestions')for(const proposal of (answer.suggestions||[]).slice(0,12)){try{const args=JSON.parse(proposal.argumentsJson);if(!['act','say','remember','intend'].includes(proposal.op))continue;validateOperation(proposal.op,args);c.suggestions.push({id:randomUUID(),title:proposal.title,reason:proposal.reason,op:proposal.op,args,status:'pending',...source,created:new Date().toISOString()});}catch{}}
      if(answer.map){const m=answer.map;if(!Array.isArray(m.nodes)||m.nodes.length>100||!Array.isArray(m.edges))throw new Error('The map response was invalid.');c.maps.push({...m,id:randomUUID(),created:new Date().toISOString(),request:text,sourceCursor:c.state?.cursor,location:c.state?.here?.id});}
      c.agentStatus='idle';
-   }catch(e){c.agentStatus='error';c.messages.push({id:randomUUID(),role:'error',text:e.message,time:new Date().toISOString()});}finally{c.activeThread=null;c.agentPreview='';await store.save();}})().catch(()=>{c.agentStatus='error';c.messages.push({id:randomUUID(),role:'error',text:'The local record could not be saved. Check folder access before continuing.',time:new Date().toISOString()});});
+   }catch(e){c.agentStatus='error';c.messages.push({...responseMeta,id:randomUUID(),role:'error',text:e.message,time:new Date().toISOString()});}finally{c.activeThread=null;c.agentPreview='';await store.save();}})().catch(()=>{c.agentStatus='error';c.messages.push({...responseMeta,id:randomUUID(),role:'error',text:'The local record could not be saved. Check folder access before continuing.',time:new Date().toISOString()});});
  }
  async function startRecap(p,options={}){
    const c=store.character(p.id);
@@ -128,7 +131,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      events=events.filter(event=>event.t>=latest-86400);
    }else if(options.range!=='all')throw new Error('Choose a recap period.');
    if(c.historyCoverage?.pending)throw new Error('History is still catching up. Try again after the next sync.');
-   const job={id:randomUUID(),status:'working',scene:options.scene||null,start:events[0]?.seq||0,
+   const job={id:randomUUID(),...(options.requestId?{requestId:options.requestId}:{}),status:'working',scene:options.scene||null,start:events[0]?.seq||0,
      end:events.at(-1)?.seq||0,range:options.range||'unread',count:events.length,coverage:coverageText(c),created:new Date().toISOString()};
    if(bookmark)Object.assign(job,{bookmark:bookmark.id,awayAt:bookmark.awayAt,returnedAt:bookmark.returnedAt});
    c.recapJob=job;c.stopRequested=false;c.agentStatus='working';storyJobs.add(p.id);
@@ -175,6 +178,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      if(req.headers['x-glass-reach-dashboard']!=='1')return json(res,403,{error:'Harness header required.'});
      if(req.method!=='GET'&&req.headers['x-csrf-token']!==csrf)return json(res,403,{error:'Reload the harness before submitting.'});
      const b=req.method==='GET'?{}:await body(req),id=url.searchParams.get('profile')||b.profile||store.data.profiles[0].id,p=store.profile(id),c=store.character(id),route=req.method+' '+url.pathname;
+     if(route==='GET /api/harness-updates')return json(res,200,await loadReleaseNotes());
      if(route==='GET /api/session'){liveProfiles.set(p.credential,id);if(demo&&!c.state)await game.refresh(p);return json(res,200,packet(id));}
      if(route==='POST /api/refresh'){await game.refresh(p);return json(res,200,packet(id));}
      if(route==='GET /api/story'){
@@ -221,7 +225,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      if(route==='POST /api/story/prose')return json(res,202,await writeSceneProse(p,b.scene));
      if(route==='POST /api/inspect')return json(res,200,await game.read(p,b.op,b.args||{}));
      if(route==='POST /api/action'){await pausePilot(p,'Paused for a manual game action.');return json(res,200,await execute(p,b.op,b.args,b.requestId));}
-     if(route==='POST /api/agent'){await pausePilot(p,'Paused for your message.');if(!b.text?.trim())throw new Error('Enter a request.');if(b.mode!=null&&!['chat','game'].includes(b.mode))throw new Error('Choose Talk to Codex or Act in game.');if(b.mode!=='game'&&/catch me up|what (?:did i miss|changed)|summari[sz]e.*(?:missed|recent|events)/i.test(b.text)){return json(res,202,await startRecap(p,{range:'unread',question:b.text}));}await runAgent(p,b.text,b.mode==='game'?'game':['atlas','suggestions','quests'].includes(b.purpose)?b.purpose:'chat');return json(res,202,{ok:true});}
+     if(route==='POST /api/agent'){if(b.requestId!=null&&(typeof b.requestId!=='string'||!/^[-a-zA-Z0-9]{1,100}$/.test(b.requestId)))throw Error('Invalid request identifier.');await pausePilot(p,'Paused for your message.');if(!b.text?.trim())throw new Error('Enter a request.');if(b.mode!=null&&!['chat','game'].includes(b.mode))throw new Error('Choose Talk to Codex or Act in game.');if(b.mode!=='game'&&/catch me up|what (?:did i miss|changed)|summari[sz]e.*(?:missed|recent|events)/i.test(b.text)){return json(res,202,await startRecap(p,{range:'unread',question:b.text,requestId:b.requestId}));}await runAgent(p,b.text,b.mode==='game'?'game':['atlas','suggestions','quests'].includes(b.purpose)?b.purpose:'chat',b.requestId);return json(res,202,{ok:true});}
      if(route==='POST /api/agent/connect')return json(res,200,demo?{connected:true,demo:true,models:[]}:await agent.start());
      if(route==='POST /api/agent/stop'){await pausePilot(p,'Paused by Stop.');c.stopRequested=true;await agent.stopThread(c.activeThread);return json(res,200,{ok:true});}
      if(route==='POST /api/agent/reset'){if(c.agentStatus==='working')throw new Error('Stop the current reply first.');c.sessions??=[];c.sessions.push({time:new Date().toISOString(),messages:c.messages});c.messages=[];c.threadId=null;await store.save();return json(res,200,packet(id));}
@@ -369,6 +373,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
          location:state.here.id,locationName:state.here.name,world:state.world,entity:p.entityId,credential:p.credential,
          since:Math.max(state.cursor||0,c.events.at(-1)?.seq||0),expires:now+approved.minutes*60000,
        };
+       primeTrigger(rule,c);
        // Claim the revision synchronously, then persist the approved command before it can fire.
        const index=current?rules.indexOf(current):rules.length;
        savingReadied.add(rule);
@@ -382,12 +387,13 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      }
      if(route==='POST /api/watch'){
        if(b.stop){const w=watchers.get(b.stop);if(w?.profileId===id){clearTimeout(w.timer);watchers.delete(b.stop);}return json(res,200,{ok:true});}
-       if([...watchers.values()].some(w=>w.profileId===id&&w.status==='watching'))throw new Error('Stop the current watch before setting another.');
-       const kind=b.kind,value=String(b.value||'').slice(0,100);if(!['arrival','reply','water','dusk'].includes(kind))throw new Error('Choose a watch condition.');
-       const expression=kind==='arrival'?`came(${JSON.stringify(value)})`:kind==='reply'?`heard('', by=${JSON.stringify(value)})`:kind==='water'?"me['water'] <= 3":"ambient.get('time_of_day') == 'dusk'";
-       const w={id:randomUUID(),profileId:id,kind,value,status:'watching',started:new Date().toISOString(),timer:null};watchers.set(w.id,w);
-       async function poll(){if(!watchers.has(w.id))return;try{const r=demo?{fired:kind==='dusk'}:await game.serial(p,async()=>{await game.assertCharacter(p);return game.transport(p,'wait',{until:expression,timeout:10,since:c.state?.cursor||0});});if(!watchers.has(w.id))return;if(r.ok===false)throw new Error(r.reason);if(r.fired){w.status='fired';c.messages.push({id:randomUUID(),timelineSeq:c.state?.cursor||0,role:'notice',text:'Watch triggered: '+kind+' '+value,time:new Date().toISOString()});await game.refresh(p);await store.save();return;}}catch(e){w.status='error';w.error=e.message;return;}w.timer=setTimeout(poll,3000);}
-       w.timer=setTimeout(poll,100);return json(res,200,{ok:true});
+       if([...watchers.values()].filter(w=>w.profileId===id&&w.status==='watching').length>=12)throw Error('The watch limit is 12.');
+       const trigger=normalizeTrigger(b.trigger||{kind:b.kind,person:b.value});
+       const minutes=Number(b.minutes||30);if(![5,15,30,60,120].includes(minutes))throw Error('Choose a watch duration.');
+       if(trigger.kind==='delay'&&trigger.threshold>=minutes)throw Error('The delay must be shorter than the expiry.');
+       await game.refresh(p);if(!demo&&c.state?.connection!=='Live')throw Error('Reconnect before setting a watch.');
+       const w={id:randomUUID(),profileId:id,trigger,kind:trigger.kind,value:trigger.person||trigger.value||'',status:'watching',entity:p.entityId,credential:p.credential,world:c.state.world,location:c.state.here.id,since:Math.max(c.state.cursor||0,c.events.at(-1)?.seq||0),expires:Date.now()+minutes*60000};
+       primeTrigger(w,c);watchers.set(w.id,w);return json(res,200,{ok:true});
      }
      if(route==='GET /api/history'){const before=Number(url.searchParams.get('before'))||Infinity;return json(res,200,c.events.filter(e=>e.seq<before).slice(-500));}
      if(route==='GET /api/export')return json(res,200,{...packet(id),events:c.events,csrf:undefined,profiles:undefined});
@@ -402,13 +408,21 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
    nextLiveAt=Date.now()+liveIntervalMs;
    if(liveBusy)return;liveBusy=true;
    const active=new Set([...liveProfiles.values(),...store.data.profiles.filter(p=>store.character(p.id).autopilot?.enabled||store.character(p.id).awayBookmarks?.some(b=>['away','queued'].includes(b.status))).map(p=>p.id)]);
+   const watching=[...watchers.values()].filter(w=>w.status==='watching').map(w=>w.profileId);
    const armed=store.data.profiles.filter(p=>store.character(p.id).readied?.some(rule=>rule.status==='armed')).map(p=>p.id);
-   try{for(const id of new Set([...active,...armed])){
+   try{for(const id of new Set([...active,...armed,...watching])){
      const p=store.profile(id),c=store.character(id);
-     if(c.agentStatus!=='working' && (c.autopilot?.enabled || armed.includes(id) || p.liveFeed!==false)){
+     if(c.agentStatus!=='working' && (c.autopilot?.enabled || armed.includes(id) || watching.includes(id) || p.liveFeed!==false)){
        liveChecking=id;
        try{await game.refresh(p);}catch{/* Retry on the next interval. */}
        finally{liveChecking=null;}
+     }
+     for(const w of watchers.values())if(w.profileId===id&&w.status==='watching'){
+       if(Date.now()>=w.expires)w.status='expired';
+       else if(w.entity!==p.entityId||w.credential!==p.credential||w.world!==c.state?.world)w.status='cancelled';
+       else if((demo||c.state?.connection==='Live')&&!c.historyCoverage?.pending&&evaluateTrigger(w,c)){
+         w.status='fired';c.messages.push({id:randomUUID(),role:'notice',timelineSeq:c.state.cursor||0,time:new Date().toISOString(),text:'Watch triggered: '+w.kind});await store.save();
+       }
      }
      try{if(!autoJobs.has(id))await runReadied({profile:p,character:c,store,execute,demo,saving:savingReadied});tickPilot(p);}catch{/* Leave any interrupted delivery unconfirmed. */}
      try{await tickReturn(p);}catch{/* Saved bookmark remains available for retry. */}

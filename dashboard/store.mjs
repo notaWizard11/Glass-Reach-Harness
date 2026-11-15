@@ -1,3 +1,4 @@
+import {captureAtlas} from './atlas.mjs';
 import {knownPeople} from './people.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
@@ -28,7 +29,7 @@ export class Store {
         rule.outcome=request?.result?.reason||(rule.status==='complete'?'Game confirmed the command.':'The server restarted during delivery. Check the game record.');
       }
     }
-    for(const c of Object.values(this.data.characters))if(c.state){captureDocuments(c,c.state.holding||[]);c.people=knownPeople(c);}
+    for(const c of Object.values(this.data.characters))if(c.state){captureAtlas(c,c.state);captureDocuments(c,c.state.holding||[]);c.people=knownPeople(c);}
     await this.save(); return this;
   }
   profile(id) { const p=this.data.profiles.find(x=>x.id===id); if(!p) throw new Error('Character profile not found.'); return p; }
@@ -39,7 +40,8 @@ export class Store {
 export function unique(rows,key='id') { return [...new Map(rows.filter(Boolean).map(x=>[x[key],x])).values()]; }
 export function ingest(c, raw, events=[]) {
   if(!raw?.you?.id || !raw.here) throw new Error(raw?.reason||'Character is not connected. Use Reconnect.');
-  const previous=c.state;
+  captureAtlas(c,raw);
+  const previous=c.state?.world===raw.world?c.state:null;
   c.names=historicalNames({...c,state:raw});
   if(previous?.here?.id&&previous.here.name)c.names[previous.here.id]=previous.here.name;
   // Only annotate events known to belong to the current observation, never a backfilled interval.

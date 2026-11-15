@@ -5,8 +5,14 @@ export function mountRules({api,getData,getProfile,reload,onError}){
  const nav=make('button','↻ Rules & updates');nav.dataset.page='rules';document.querySelector('.navigation').append(nav);
  const page=make('section',null,'page');page.id='page-rules';page.hidden=true;
  page.append(make('h1','Rules & updates'),make('p','Engine mechanics are synced automatically when the world reports a new rules version. Reading the engine feed acknowledges it there; Seen below is your separate reading marker.'));
+ const releasePanel=make('section',null,'panel harness-updates'),releaseStatus=make('p',null,'caption'),releaseList=make('div');
+ releasePanel.append(make('h2','Harness updates'),make('p','Feature and fix notes from this installed build. Unreleased entries are development notes; this does not check for or install a newer version.','caption'));
+ const releaseControls=make('div',null,'inline'),sourceLink=make('a','View changelog source');sourceLink.href='/CHANGELOG.md';sourceLink.target='_blank';sourceLink.rel='noopener';
+ releaseControls.append(button('Reload harness notes',()=>loadNotes()),sourceLink);releasePanel.append(releaseControls,releaseStatus,releaseList);page.append(releasePanel,make('h2','Engine rules'));
+ let notesLoading=false,notesLoaded=false;
+ async function loadNotes(){if(notesLoading)return;notesLoading=true;releaseStatus.textContent='Loading harness notes…';try{const result=await api('harness-updates');releaseList.replaceChildren();for(const [index,section]of result.sections.entries()){const item=make('details',null,'release-note');item.open=index===0;item.append(make('summary',section.title));const list=make('ul');for(const note of section.notes)list.append(make('li',note));item.append(list);releaseList.append(item);}notesLoaded=true;releaseStatus.textContent=result.sections.length?'Same source as the repository changelog.':'No release notes recorded yet.';}catch(error){releaseStatus.textContent='Harness notes unavailable: '+error.message;}finally{notesLoading=false;}}
  const controls=make('div',null,'inline'),status=make('p'),feed=make('div'),reviews=make('div');
- controls.append(button('Check for updates',async()=>{status.textContent='Checking engine rules…';await api('rules/sync',{});await reload();}),button('Mark updates seen',async()=>{await api('rules/seen',{});await reload();}),button('Review rules & propose prompt updates',async()=>{await api('rules/review',{});await reload();}));
+ controls.append(button('Check engine rules',async()=>{status.textContent='Checking engine rules…';await api('rules/sync',{});await reload();}),button('Mark engine updates seen',async()=>{await api('rules/seen',{});await reload();}),button('Review rules & propose prompt updates',async()=>{await api('rules/review',{});await reload();}));
  page.append(controls,status,make('p','Rules inform agent context automatically. Prompt proposals are never applied automatically. A rule may also require code changes to watches, automation or the character sheet; editing a prompt cannot implement those changes.','caption'),reviews,feed);
  document.getElementById('page-settings').before(page);
  const panel=make('section',null,'panel prompt-list-panel');panel.append(make('h2','Master Prompts List'),make('p','The shared Master prompt and character additions below apply to every Codex query. Expand a type to edit its actual role instructions and automatic task prompt. Context options control direct requests; selected evidence, current observations and execution permissions remain enforced. Saved changes affect subsequent model requests.'));
@@ -43,6 +49,7 @@ export function mountRules({api,getData,getProfile,reload,onError}){
  }
  function update(){
   const data=getData();if(!data)return;
+  if(!notesLoaded&&!notesLoading){notesLoaded=true;loadNotes();}
   if(profileKey!==getProfile()){profileKey=getProfile();loadPrompts();rulesKey='';}
   const f=data.rulesFeed,review=data.rulesReview;
   const key=JSON.stringify([profileKey,f,review]);if(key===rulesKey)return;rulesKey=key;

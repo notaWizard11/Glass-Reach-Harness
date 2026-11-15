@@ -1,6 +1,20 @@
 # Changelog
 
-## Unreleased
+Brief notes on harness features and fixes, newest first. Unreleased entries describe the current working build; they are not a published release. The harness displays this same file in Rules & updates. Engine-rule changes are a separate feed.
+
+## Unreleased — 2026-11-15
+
+- Added optional response popups outside Play: replies stack beside the composer, newest at the bottom, with quick fade-in, dismissal and a slower fade-out after 15 seconds.
+- Live atlas now accumulates engine coordinates, place sizes, landmarks and routes separately for each character and world.
+- Added location search, jump-and-zoom, Centre on Self and Zoom to Self, with a wider map and a compact left-hand location list.
+- Added collision-aware labels, selectable zoom focus and persistent label-category toggles in the map legend.
+- Visible characters use live map markers when positioned, or a Visible here list when coordinates are missing; no last-seen markers are retained.
+- Moved map/image commissioning into popovers and connection details into an expandable panel; retained schematic diagrams and image archives.
+- Unified watches and readied actions with grouped trigger choices, configurable thresholds, location scopes and condition-transition settings.
+- Moved autopilot controls to the Automation tab, keeping a composer shortcut.
+- Audited the user guide for the current build and added these shared release notes to Rules & updates.
+
+## Earlier preview updates
 
 - Added a section-by-section user guide in `Documention/Guide`, with an overview and a page for each of the nine harness tabs, linked from the README and quick-start.
 

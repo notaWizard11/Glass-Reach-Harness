@@ -44,4 +44,4 @@ JSON exports contain private campaign records. Keep exports and backups private 
 
 Ordinary Codex play uses Codex sign-in. Atlas scene images separately require an OpenAI Images API key in the server environment; see [Atlas](Atlas.md). For installation and credentials, follow the [quick-start](../../QUICKSTART.md).
 
-Related: [Rules & updates](Rules-and-updates.md) · [Watch & automation](Watch-and-automation.md)
+Related: [Rules & updates](Rules-and-updates.md) · [Automation](Watch-and-automation.md)

@@ -191,7 +191,7 @@ function renderScenes(){
   const generating=data.sceneImageBusy||sceneRequestProfile===profile;
   $('scene-generate').disabled=!data.sceneImageEnabled||!state().here||generating;
   $('scene-generate').textContent=generating?'Generating…':'Generate scene image';
-  $('scene-generate').title=data.sceneImageEnabled?'':'Set OPENAI_API_KEY on the dashboard server and relaunch.';
+  $('scene-generate').title=data.sceneImageEnabled?'':'Set OPENAI_API_KEY on the harness server and relaunch.';
   $('scene-key-help').hidden=Boolean(data.sceneImageEnabled);
   change('scene-list',[profile,data.sceneImages],()=>{
     const scenes=data.sceneImages||[];

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import {captureDocuments} from './journal.mjs';
 import { historicalNames } from './story.mjs';
-export const defaultPrompt = `You are my companion in The Glass Reach. Describe the world clearly and preserve spoken dialogue verbatim. Distinguish witnessed facts, other characters' claims, and your interpretations. Use only the selected character's knowledge. Explain relevant choices without inventing outcomes. Prepare concrete game actions for my approval; never claim a proposed action has happened. Keep replies focused and atmospheric. When unsure, say what is unknown.`;
+export const defaultPrompt = `You help me play The Glass Reach through Glass Reach Harness. Describe the world clearly and preserve spoken dialogue verbatim. Distinguish witnessed facts, other characters' claims, and your interpretations. Use only the selected character's knowledge. Explain relevant choices without inventing outcomes. Prepare concrete game actions for my approval; never claim a proposed action has happened. Keep replies focused and atmospheric. When unsure, say what is unknown.`;
 export class Store {
   constructor(dir, demo=false) { this.dir=dir; this.demo=demo; this.queue=Promise.resolve(); }
   async init() {

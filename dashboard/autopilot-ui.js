@@ -33,7 +33,7 @@ export function mountAutopilot({api,getData,getProfile,reload,openDialog,field,b
    paragraph(root,settings.minutes+' minutes · at most '+settings.maxActions+' actions and '+settings.maxDecisions+' model decisions · '+settings.interval+' seconds between decisions.');
    paragraph(root,'Model: '+(data.modelsByPurpose?.autopilot||data.model||'Account default'));
    paragraph(root,'Locations: '+(settings.locations.length?settings.locations.map(id=>data.names?.[id]||id).join(', '):'Known reachable routes'));
-   paragraph(root,'Starting authorizes the dashboard to send permitted game actions without asking each time.');
+   paragraph(root,'Starting authorizes the harness to send permitted game actions without asking each time.');
    root.append(button('Start with these permissions',async()=>{try{await submit(true,selected,settings);document.getElementById('drawer').close();}catch(error){onError(error);}},'primary'));
  };
  function update(){

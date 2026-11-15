@@ -18,7 +18,7 @@ export class Agent {
     const overrides=['features.shell_tool=false','features.unified_exec=false','features.apps=false','features.plugins=false','features.browser_use=false','features.computer_use=false','features.multi_agent=false','features.code_mode=false','features.skip_host_skill_discovery=true','web_search="disabled"'];
     // CLI dotted override keys are literal path segments, not quoted TOML keys.
     for(const m of config.matchAll(/^\[mcp_servers\.(?:"([^"]+)"|([\w-]+))\]/gm)){
-      const name=m[1]||m[2];if(!/^[\w-]+$/.test(name))throw new Error('An MCP server name cannot be safely overridden for this companion. Use a separate Codex configuration.');
+      const name=m[1]||m[2];if(!/^[\w-]+$/.test(name))throw new Error('An MCP server name cannot be safely overridden for this harness. Use a separate Codex configuration.');
       overrides.push(`mcp_servers.${name}.enabled=false`);
     }
     const cwd=join(this.store.dir,'agent-workspace');await mkdir(cwd,{recursive:true});this.cwd=cwd;
@@ -28,9 +28,9 @@ export class Agent {
     createInterface({input:this.child.stdout}).on('line',line=>{try{this.receive(JSON.parse(line));}catch{}});
     this.child.on('error',e=>this.fail('Codex could not be launched ('+(e.code||'startup error')+'). Check the installed executable or GLASS_REACH_CODEX setting.'));
     this.child.on('exit',()=>this.fail('Codex disconnected. Your saved conversation is still available.'));
-    await this.request('initialize',{clientInfo:{name:'glass_reach_companion',title:'Glass Reach',version:'2.0.0'}},20000);
+    await this.request('initialize',{clientInfo:{name:'glass_reach_companion',title:'Glass Reach Harness',version:'2.0.0'}},20000);
     this.send({method:'initialized',params:{}});
-    let cursor=null;do{const catalog=await this.request('mcpServerStatus/list',{limit:100,...(cursor?{cursor}:{})});if((catalog.data||[]).some(s=>Object.keys(s.tools||{}).length))throw new Error('Codex exposed external tools. The companion will not start until its tool isolation is restored.');cursor=catalog.nextCursor;}while(cursor);
+    let cursor=null;do{const catalog=await this.request('mcpServerStatus/list',{limit:100,...(cursor?{cursor}:{})});if((catalog.data||[]).some(s=>Object.keys(s.tools||{}).length))throw new Error('Codex exposed external tools. The harness will not start until its tool isolation is restored.');cursor=catalog.nextCursor;}while(cursor);
     const account=await this.request('account/read',{refreshToken:false});
     this.models=[];cursor=null;do{const models=await this.request('model/list',{limit:100,...(cursor?{cursor}:{})});this.models.push(...(models.data||[]));cursor=models.nextCursor;}while(cursor);
     this.account=account.account?{type:account.account.type}:null;
@@ -39,7 +39,7 @@ export class Agent {
   send(m){this.child?.stdin.write(JSON.stringify(m)+'\n');}
   request(method,params,timeout=30000){return new Promise((resolve,reject)=>{const id=this.next++;const timer=setTimeout(()=>{this.pending.delete(id);reject(new Error('Codex did not answer '+method+'.'));},timeout);this.pending.set(id,{resolve,reject,timer});this.send({id,method,params});});}
   receive(m){
-    if(m.id!=null&&m.method){this.send({id:m.id,error:{code:-32601,message:'This companion accepts no tool execution or permission escalation. Return a proposed game action in the response instead.'}});return;}
+    if(m.id!=null&&m.method){this.send({id:m.id,error:{code:-32601,message:'This harness accepts no tool execution or permission escalation. Return a proposed game action in the response instead.'}});return;}
     if(m.id!=null){const p=this.pending.get(m.id);if(p){clearTimeout(p.timer);this.pending.delete(m.id);m.error?p.reject(new Error(m.error.message)):p.resolve(m.result);}return;}
     const p=m.params||{},task=this.turns.get(p.threadId);if(!task)return;
     if(m.method==='turn/started')task.turnId=p.turn.id;

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Renamed the app, repository metadata, launchers and release package to Glass Reach Harness. Previous launcher names remain compatibility shortcuts.
+- Audited setup and operational documentation: added a dedicated quick-start, corrected Codex discovery and background-operation guidance, replaced obsolete approvals instructions, documented current character-sheet limits, and refreshed development/private-phone notes.
+
 - Added an automatically synced engine rules feed with separate read markers and rules context in every Codex request.
 - Added editable per-query master prompts, context controls, effective-instruction previews and prompt history in Settings.
 - Added Codex rules reviews with individually applied/dismissed prompt proposals and stale-change checks.

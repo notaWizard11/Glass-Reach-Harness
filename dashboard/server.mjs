@@ -172,8 +172,8 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
    const url=new URL(req.url,origin);
    try{
      if(!url.pathname.startsWith('/api/')){const a=assets[url.pathname];if(!a||req.method!=='GET')return res.writeHead(404).end();res.writeHead(200,{'Content-Type':a[1]+'; charset=utf-8'}).end(await readFile(new URL(a[0],import.meta.url)));return;}
-     if(req.headers['x-glass-reach-dashboard']!=='1')return json(res,403,{error:'Dashboard header required.'});
-     if(req.method!=='GET'&&req.headers['x-csrf-token']!==csrf)return json(res,403,{error:'Reload the dashboard before submitting.'});
+     if(req.headers['x-glass-reach-dashboard']!=='1')return json(res,403,{error:'Harness header required.'});
+     if(req.method!=='GET'&&req.headers['x-csrf-token']!==csrf)return json(res,403,{error:'Reload the harness before submitting.'});
      const b=req.method==='GET'?{}:await body(req),id=url.searchParams.get('profile')||b.profile||store.data.profiles[0].id,p=store.profile(id),c=store.character(id),route=req.method+' '+url.pathname;
      if(route==='GET /api/session'){liveProfiles.set(p.credential,id);if(demo&&!c.state)await game.refresh(p);return json(res,200,packet(id));}
      if(route==='POST /api/refresh'){await game.refresh(p);return json(res,200,packet(id));}
@@ -284,7 +284,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      if(route==='POST /api/map'){const m=b.map;if(!m||!Array.isArray(m.nodes)||m.nodes.length>100||!Array.isArray(m.edges))throw new Error('Invalid map.');c.maps.push({...m,id:randomUUID(),created:new Date().toISOString(),sourceCursor:c.state?.cursor,location:c.state?.here?.id});await store.save();return json(res,200,{ok:true});}
      if(route==='POST /api/scene-image'){
        const key=process.env.OPENAI_API_KEY;
-       if(demo||!key)throw new Error('Scene generation needs an OpenAI API key on the live dashboard server.');
+       if(demo||!key)throw new Error('Scene generation needs an OpenAI API key on the live harness server.');
        if(sceneRequests.has(id))throw new Error('An image for this character is already generating.');
        const observation=c.state,description=typeof b.description==='string'?b.description.trim():'';
        if(!observation?.here || observation.you?.id!==p.entityId)throw new Error('Sync this character before requesting an image.');
@@ -415,6 +415,6 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
    }}finally{liveBusy=false;}
  },liveIntervalMs);liveTimer.unref();
  const stop=()=>{clearInterval(liveTimer);clearInterval(background);for(const w of watchers.values())clearTimeout(w.timer);watchers.clear();agent.close();server.close();};
- const url='http://127.0.0.1:'+server.address().port+'/';console.log((demo?'Demo':'Glass Reach')+': '+url);return {server,store,game,agent,url,stop};
+ const url='http://127.0.0.1:'+server.address().port+'/';console.log((demo?'Glass Reach Harness demo':'Glass Reach Harness')+': '+url);return {server,store,game,agent,url,stop};
 }
 if(process.argv[1]===fileURLToPath(import.meta.url)){const app=await startServer({demo:process.argv.includes('--demo'),port:Number(process.env.PORT)||undefined});if(process.argv.includes('--open'))execFile('rundll32.exe',['url.dll,FileProtocolHandler',app.url],{windowsHide:true});process.on('SIGINT',()=>{app.stop();process.exit();});process.on('SIGTERM',()=>{app.stop();process.exit();});}

@@ -20,7 +20,7 @@ async function launch() {
   const url = `http://127.0.0.1:${port}/`;
   // Check before opening the store: a second process must not change active request state.
   if (await dashboardIsRunning(url, demo)) {
-    console.log('Opening the dashboard that is already running.');
+    console.log('Opening the harness that is already running.');
     execFile('rundll32.exe', ['url.dll,FileProtocolHandler', url], { windowsHide: true });
     return;
   }
@@ -34,8 +34,8 @@ async function launch() {
       return;
     }
     console.error(error.code === 'EADDRINUSE'
-      ? `Port ${port} is occupied by another service. The dashboard was not started.`
-      : `Could not start the dashboard: ${error.message}`);
+      ? `Port ${port} is occupied by another service. The harness was not started.`
+      : `Could not start the harness: ${error.message}`);
     process.exitCode = 1;
   }
 }

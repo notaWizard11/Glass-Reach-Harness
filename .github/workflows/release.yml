@@ -18,5 +18,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          git archive --format=zip --output=glass-reach-dashboard.zip HEAD
-          gh release create "$RELEASE_TAG" glass-reach-dashboard.zip --verify-tag --draft --title "Glass Reach Dashboard $RELEASE_TAG" --notes-file CHANGELOG.md
+          git archive --format=zip --output=glass-reach-harness.zip HEAD
+          gh release create "$RELEASE_TAG" glass-reach-harness.zip --verify-tag --draft --title "Glass Reach Harness $RELEASE_TAG" --notes-file CHANGELOG.md

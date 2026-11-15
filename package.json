@@ -1,8 +1,8 @@
 {
-  "name": "glass-reach-dashboard",
+  "name": "glass-reach-harness",
   "version": "0.1.0",
   "private": true,
-  "description": "A local RPG dashboard for The Glass Reach with a Codex companion",
+  "description": "A player-controlled Codex harness for playing Glass Reach",
   "engines": {
     "node": ">=22"
   },

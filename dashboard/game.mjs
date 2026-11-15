@@ -69,6 +69,7 @@ export class Game {
         return {ok:false,reason:'The character, world or scene changed before dispatch.'};
       }
       if(Date.now()>=guard.expires)return {ok:false,reason:'The readied action expired before dispatch.'};
+      if(guard.authorize){try{guard.authorize(current);}catch(error){return {ok:false,reason:error.message};}}
     }
     if(this.demo)return this.demoExecute(p,op,args);
     if(op!=='join'&&!guard)await this.assertCharacter(p);

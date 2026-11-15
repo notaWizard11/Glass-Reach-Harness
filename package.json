@@ -9,6 +9,6 @@
   "scripts": {
     "start": "node dashboard/server.mjs",
     "demo": "node dashboard/demo.mjs",
-    "test": "node --test dashboard/test.mjs dashboard/game-turn.test.mjs dashboard/codex-path.test.mjs dashboard/timeline.test.mjs dashboard/story.test.mjs dashboard/journal.test.mjs dashboard/people.test.mjs"
+    "test": "node --test dashboard/test.mjs dashboard/game-turn.test.mjs dashboard/codex-path.test.mjs dashboard/timeline.test.mjs dashboard/story.test.mjs dashboard/journal.test.mjs dashboard/people.test.mjs dashboard/autopilot.test.mjs"
   }
 }

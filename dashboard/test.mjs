@@ -89,6 +89,7 @@ test('interaction models override the general model with account-default fallbac
  assert.equal(modelForPurpose(settings,'scene-summary'),'capable');
  assert.equal(modelForPurpose(settings,'recap'),'capable');
  assert.equal(modelForPurpose(settings,'game'),'strong');
+ assert.equal(modelForPurpose({...settings,modelsByPurpose:{...settings.modelsByPurpose,autopilot:'pilot-model'}},'autopilot'),'pilot-model');
  assert.equal(modelForPurpose({model:'general',modelsByPurpose:{chat:'capable'}},'scene-story'),'general');
 });
 

@@ -10,6 +10,7 @@ import { Game, validateOperation } from './game.mjs';
 import { Agent } from './agent.mjs';
 import {applyRecords,recordPermissions,questStatuses} from './journal.mjs';
 import { prepareReadied, runReadied } from './readied.mjs';
+import {autopilotConfig,startAutopilot,pauseAutopilotState,runAutopilot,autoLog} from './autopilot.mjs';
 import { generateSceneImage } from './scene-images.mjs';
 import { storyPage, buildScenes, summarizeHistory, coverageText, describeEvent, historicalNames, sceneEvidence } from './story.mjs';
 export async function startServer({demo=false,port=demo?47382:47381,dataDir,liveIntervalMs=5000,imageGenerator=generateSceneImage}={}) {
@@ -18,6 +19,15 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
  const csrf=randomBytes(24).toString('hex'),watchers=new Map(),liveProfiles=new Map();
  const savingReadied=new WeakSet();
  const storyJobs=new Set();
+ const autoJobs=new Map();
+ async function pausePilot(p,reason){const c=store.character(p.id);if(!c.autopilot?.enabled)return;pauseAutopilotState(c,reason);autoLog(c,'paused',reason);await store.save();await agent.stopThread(c.autopilotThread);}
+ function tickPilot(p){
+   if(autoJobs.has(p.id))return;
+   const c=store.character(p.id);if(!c.autopilot?.enabled||c.agentStatus==='working')return;
+   const work=runAutopilot({profile:p,character:c,game,execute,save:()=>store.save(),
+     plan:execution=>demo?Promise.resolve({reply:'Fictional autopilot is waiting for an appropriate opportunity.',suggestions:[]}):agent.reply(p,c.autopilot.config.prompt,'autopilot',undefined,execution)});
+   autoJobs.set(p.id,work);work.catch(error=>{pauseAutopilotState(c,error.message);store.save().catch(()=>{});}).finally(()=>{autoJobs.delete(p.id);c.autopilotThread=null;});
+ }
  let proseBusy=false;
  async function writeSceneProse(p,sceneId){
    const c=store.character(p.id);
@@ -42,7 +52,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
  let nextLiveAt=Date.now()+liveIntervalMs,liveChecking=null;
  const mobile=process.env.GLASS_REACH_MOBILE_ORIGIN?new URL(process.env.GLASS_REACH_MOBILE_ORIGIN):null,login=process.env.GLASS_REACH_MOBILE_LOGIN;
  if(mobile&&(mobile.protocol!=='https:'||!mobile.hostname.endsWith('.ts.net')||mobile.pathname!=='/'||!login))throw new Error('Private phone access requires an exact Tailscale HTTPS origin and login.');
- const assets={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/storyboard.js':['storyboard.js','text/javascript'],'/people.mjs':['people.mjs','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
+ const assets={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/storyboard.js':['storyboard.js','text/javascript'],'/people.mjs':['people.mjs','text/javascript'],'/autopilot-ui.js':['autopilot-ui.js','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
  async function body(req){let s='';for await(const chunk of req){s+=chunk;if(s.length>300000)throw new Error('Request is too large.');}return s?JSON.parse(s):{};}
  const json=(res,status,data)=>res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'}).end(JSON.stringify(data));
  const packet=id=>({...store.publicData(id),csrf,sceneIndex:buildScenes(store.character(id)).map(({id,title,start,end,startTime,endTime})=>({id,title,start,end,startTime,endTime})),
@@ -173,14 +183,14 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      if(route==='POST /api/story/recap')return json(res,202,await startRecap(p,b));
      if(route==='POST /api/story/prose')return json(res,202,await writeSceneProse(p,b.scene));
      if(route==='POST /api/inspect')return json(res,200,await game.read(p,b.op,b.args||{}));
-     if(route==='POST /api/action')return json(res,200,await execute(p,b.op,b.args,b.requestId));
-     if(route==='POST /api/agent'){if(!b.text?.trim())throw new Error('Enter a request.');if(b.mode!=null&&!['chat','game'].includes(b.mode))throw new Error('Choose Talk to Codex or Act in game.');if(b.mode!=='game'&&/catch me up|what (?:did i miss|changed)|summari[sz]e.*(?:missed|recent|events)/i.test(b.text)){return json(res,202,await startRecap(p,{range:'unread',question:b.text}));}await runAgent(p,b.text,b.mode==='game'?'game':['atlas','suggestions','quests'].includes(b.purpose)?b.purpose:'chat');return json(res,202,{ok:true});}
+     if(route==='POST /api/action'){await pausePilot(p,'Paused for a manual game action.');return json(res,200,await execute(p,b.op,b.args,b.requestId));}
+     if(route==='POST /api/agent'){await pausePilot(p,'Paused for your message.');if(!b.text?.trim())throw new Error('Enter a request.');if(b.mode!=null&&!['chat','game'].includes(b.mode))throw new Error('Choose Talk to Codex or Act in game.');if(b.mode!=='game'&&/catch me up|what (?:did i miss|changed)|summari[sz]e.*(?:missed|recent|events)/i.test(b.text)){return json(res,202,await startRecap(p,{range:'unread',question:b.text}));}await runAgent(p,b.text,b.mode==='game'?'game':['atlas','suggestions','quests'].includes(b.purpose)?b.purpose:'chat');return json(res,202,{ok:true});}
      if(route==='POST /api/agent/connect')return json(res,200,demo?{connected:true,demo:true,models:[]}:await agent.start());
-     if(route==='POST /api/agent/stop'){c.stopRequested=true;await agent.stopThread(c.activeThread);return json(res,200,{ok:true});}
+     if(route==='POST /api/agent/stop'){await pausePilot(p,'Paused by Stop.');c.stopRequested=true;await agent.stopThread(c.activeThread);return json(res,200,{ok:true});}
      if(route==='POST /api/agent/reset'){if(c.agentStatus==='working')throw new Error('Stop the current reply first.');c.sessions??=[];c.sessions.push({time:new Date().toISOString(),messages:c.messages});c.messages=[];c.threadId=null;await store.save();return json(res,200,packet(id));}
      if(route==='POST /api/settings'){
        if(typeof b.masterPrompt==='string'&&b.masterPrompt!==store.data.masterPrompt){store.data.promptVersions.unshift({text:store.data.masterPrompt,time:new Date().toISOString()});store.data.promptVersions=store.data.promptVersions.slice(0,20);store.data.masterPrompt=b.masterPrompt;}
-       if(b.modelsByPurpose&&typeof b.modelsByPurpose==='object'){store.data.modelsByPurpose=Object.fromEntries(['chat','game','prose','atlas','suggestions'].map(k=>[k,typeof b.modelsByPurpose[k]==='string'?b.modelsByPurpose[k]:'']));}
+       if(b.modelsByPurpose&&typeof b.modelsByPurpose==='object'){store.data.modelsByPurpose=Object.fromEntries(['chat','game','prose','atlas','suggestions','autopilot'].map(k=>[k,typeof b.modelsByPurpose[k]==='string'?b.modelsByPurpose[k]:'']));}
        if(typeof b.liveFeed==='boolean')p.liveFeed=b.liveFeed;
        if(typeof b.model==='string')store.data.model=b.model;if(typeof b.instructions==='string')p.instructions=b.instructions;if(['manual','suggest'].includes(b.mode))p.mode=b.mode;
        await store.save();return json(res,200,packet(id));
@@ -223,7 +233,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
        if(b.token&&!demo){const r=await game.transport(profile,'',{token:b.token},true);if(!r.ok)throw new Error('Could not protect the credential.');}
        store.data.profiles.push(profile);store.character(pid);if(demo)await game.refresh(profile);await store.save();return json(res,200,{id:pid});
      }
-     if(route==='POST /api/suggestion'){
+     if(route==='POST /api/suggestion'){await pausePilot(p,'Paused for manual review.');
        const q=c.suggestions.find(x=>x.id===b.id);if(!q)throw new Error('Suggestion not found.');if(q.status!=='pending')throw new Error('This suggestion has already been handled.');
        if(b.dismiss){q.status='dismissed';await store.save();return json(res,200,{ok:true});}
        if(q.entity!==p.entityId)throw new Error('Suggestion belongs to a different character.');q.status='reviewing';await store.save();
@@ -231,6 +241,19 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
        if(!demo&&c.state?.connection!=='Live'){q.status='pending';await store.save();throw new Error('Reconnect before approving.');}
        if(q.location!==c.state?.here?.id){q.status='stale';await store.save();throw new Error('The character has moved. Prepare a new suggestion for this location.');}
        const args=b.args||q.args;try{validateOperation(q.op,args);}catch(e){q.status='pending';await store.save();throw e;}q.status='executing';await store.save();const r=await execute(p,q.op,args,'suggestion-'+q.id);q.status=r.status;await store.save();return json(res,200,r);
+     }
+     if(route==='POST /api/autopilot'){
+       if(b.pause){await pausePilot(p,'Paused by player.');return json(res,200,packet(id));}
+       const config=autopilotConfig(b.config);
+       await pausePilot(p,'Configuration changed.');
+       if(autoJobs.has(p.id))throw new Error('Autopilot is stopping. Wait a moment before starting again.');
+       if(b.start){
+         if(c.agentStatus==='working')throw new Error('Wait for the current response before starting autopilot.');
+         if(store.data.profiles.some(other=>other.id!==p.id&&other.credential===p.credential&&store.character(other.id).autopilot?.enabled))throw new Error('Another character uses this same game connection. Pause it first.');
+         await game.refresh(p);c.autopilot=startAutopilot(c,p,config);autoLog(c,'started','Autopilot started with the reviewed permissions.');
+       }else{c.autopilot={...c.autopilot,config,enabled:false,status:'paused',reason:'Configuration saved. Start explicitly when ready.'};}
+       try{await store.save();}catch(error){pauseAutopilotState(c,'Could not save configuration.');throw error;}
+       return json(res,200,packet(id));
      }
      if(route==='POST /api/readied'){
        const rules=c.readied??=[];
@@ -293,22 +316,22 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
    }catch(e){json(res,400,{error:e.message});}
  });
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
- const background=setInterval(async()=>{for(const p of store.data.profiles){const c=store.character(p.id);if(p.mode!=='suggest'||c.agentStatus==='working'||Date.now()-(c.lastSuggestedAt||0)<300000)continue;try{await game.refresh(p);if(c.state?.connection==='Saved observation')continue;if(c.lastSuggestedCursor===c.state?.cursor)continue;c.lastSuggestedCursor=c.state.cursor;c.lastSuggestedAt=Date.now();await runAgent(p,'Discover new quests in the story.','quests');}catch{}}},60000);background.unref();
+ const background=setInterval(async()=>{for(const p of store.data.profiles){const c=store.character(p.id);if(p.mode!=='suggest'||c.autopilot?.enabled||c.agentStatus==='working'||Date.now()-(c.lastSuggestedAt||0)<300000)continue;try{await game.refresh(p);if(c.state?.connection==='Saved observation')continue;if(c.lastSuggestedCursor===c.state?.cursor)continue;c.lastSuggestedCursor=c.state.cursor;c.lastSuggestedAt=Date.now();await runAgent(p,'Discover new quests in the story.','quests');}catch{}}},60000);background.unref();
  let liveBusy=false;
  nextLiveAt=Date.now()+liveIntervalMs;
  const liveTimer=setInterval(async()=>{
    nextLiveAt=Date.now()+liveIntervalMs;
    if(liveBusy)return;liveBusy=true;
-   const active=new Set(liveProfiles.values());
+   const active=new Set([...liveProfiles.values(),...store.data.profiles.filter(p=>store.character(p.id).autopilot?.enabled).map(p=>p.id)]);
    const armed=store.data.profiles.filter(p=>store.character(p.id).readied?.some(rule=>rule.status==='armed')).map(p=>p.id);
    try{for(const id of new Set([...active,...armed])){
      const p=store.profile(id),c=store.character(id);
-     if(c.agentStatus!=='working' && (armed.includes(id) || p.liveFeed!==false)){
+     if(c.agentStatus!=='working' && (c.autopilot?.enabled || armed.includes(id) || p.liveFeed!==false)){
        liveChecking=id;
        try{await game.refresh(p);}catch{/* Retry on the next interval. */}
        finally{liveChecking=null;}
      }
-     try{await runReadied({profile:p,character:c,store,execute,demo,saving:savingReadied});}catch{/* Leave any interrupted delivery unconfirmed. */}
+     try{if(!autoJobs.has(id))await runReadied({profile:p,character:c,store,execute,demo,saving:savingReadied});tickPilot(p);}catch{/* Leave any interrupted delivery unconfirmed. */}
    }}finally{liveBusy=false;}
  },liveIntervalMs);liveTimer.unref();
  const stop=()=>{clearInterval(liveTimer);clearInterval(background);for(const w of watchers.values())clearTimeout(w.timer);watchers.clear();agent.close();server.close();};

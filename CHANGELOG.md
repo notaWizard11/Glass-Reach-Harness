@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added opt-in, per-character autopilot with its own model, motivations and goals, five action permissions, allowed locations, duration/action/decision limits, and an activity log. Permissions are rechecked before dispatch; manual control, uncertain delivery and restarts pause execution.
+
 - Redesigned people cards with standing, known faction and hover descriptions; fixed directed relationship rendering and moved raw records into overlay controls.
 
 - Replaced Approvals with evidence-backed quest discovery and progress tracking; added conversational local quest/memory saving.

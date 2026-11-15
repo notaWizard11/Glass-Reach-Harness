@@ -108,11 +108,19 @@ After an absence, choose **Catch me up** for events since your last caught-up ma
 
 Recaps use records saved for the selected character. Coverage notices show when history is still syncing or the connection is interrupted. Events the game never exposed cannot be reconstructed; keep the local server running to collect updates while away. Normal inner-thought questions also search older saved events for relevant context.
 
-Settings loads the models available to your signed-in Codex account automatically. Choose a General model and optional overrides for Inner thoughts, Game actions & narration, Auto prose, Atlas diagrams, and Quest discovery; then select Save model choices. Empty overrides inherit the general model. Account default uses your Codex configuration.
+Settings loads the models available to your signed-in Codex account automatically. Choose a General model and optional overrides for Inner thoughts, Game actions & narration, Auto prose, Atlas diagrams, Quest discovery, and Autopilot; then select Save model choices. Empty overrides inherit the general model. Account default uses your Codex configuration.
 
 Open **Watch & automation** from the navigation or the Play composer. Choose **Ready an action**, select a trigger and one exact game action or line of dialogue, then review and approve it. Up to 12 actions per character can wait at once. Edit and approve an armed rule again to replace it, or disarm it. The game must still be connected to that character and the character must be in the scene where you armed the command. Each rule expires at the time you choose. The dashboard server checks rules in the background even with Live off. The story feed and rule list show what happened.
 
 To illustrate a scene, set an OpenAI API key in the dashboard server’s OPENAI_API_KEY environment variable and relaunch. Open **Atlas → Scene images**, describe the scene, and click **Generate scene image**. This sends the request and a short visual description of the last observed location to the OpenAI Images API. Generation uses your API project’s billing. Images are saved locally for the selected character and can be downloaded as PNG files.
+
+## Autopilot
+
+In **Settings**, choose an **Autopilot** model, then open **Watch & automation → Autopilot**. Write your character's motivations and goals, choose permissions for talking, travelling, interacting with things, attacking, and self-defence, and set a decision interval, duration, action limit and model-decision limit. Optionally restrict allowed locations (include the current location). **Save configuration** keeps it off; **Review & start** shows the permissions you are authorizing before starting.
+
+Autopilot makes one model decision at a time and may wait, inspect, speak or perform one permitted action. Each decision uses Codex, including decisions to wait. The dashboard checks permissions against fresh game observations before dispatch. Interaction permission includes giving items and opening locks; only supported, currently exposed verbs are accepted. Self-defence permits retaliation only against a specific attacker supported by a recent recorded attack since activation. It does not treat spoken threats as attacks. Finishing blows and following are excluded.
+
+The local server must remain running and the PC awake. Autopilot continues with the browser closed or Live unchecked. Manual messages and game actions pause it; so do expired limits, refused or uncertain actions, connection problems, and a server restart. Pause prevents later commands but cannot undo one already sent. Review the activity log before restarting. Existing readied actions and the game's own idle survival routines remain separate from these permissions. Demo mode illustrates the workflow but only waits.
 
 ## Quests and Journal
 

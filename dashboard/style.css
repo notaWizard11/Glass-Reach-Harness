@@ -450,3 +450,15 @@
 .relationship-kind{display:block;color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin:7px 0}
 .relationship-line{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:12px;color:var(--muted);padding:5px 0}
 .relationship-line p{flex-basis:100%;margin:2px 0;font-style:italic}
+.autopilot-panel{border:1px solid var(--line);border-radius:6px;padding:14px;margin:0 0 18px;background:var(--panel)}
+.autopilot-panel .caption{padding:0}
+.pilot-permissions{display:flex;flex-wrap:wrap;gap:7px;border:1px solid var(--line);border-radius:5px}
+.pilot-permissions label,#pilot-locations label{display:flex;align-items:center;gap:7px;margin:5px;font-size:12px}
+.autopilot-panel input[type=checkbox]{width:auto}
+.pilot-limits{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}
+.pilot-limits input{width:100%}
+#pilot-status{font-size:12px;color:var(--gold)}
+#pilot-locations{display:flex;flex-wrap:wrap}
+.autopilot-panel>.inline{margin-top:12px}
+#watch-controls .autopilot-panel details{margin:12px 0}
+.composer #watch-controls{max-height:58vh;overflow:auto}

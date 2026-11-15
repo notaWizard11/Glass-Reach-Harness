@@ -1,3 +1,4 @@
+import {knownPeople,relationshipGroups} from './people.mjs';
 import {storyRows,groupStoryRows} from './timeline.mjs';
 import {mountStoryboard} from './storyboard.js';
 'use strict';
@@ -229,7 +230,7 @@ function change(key,value,fn){const next=JSON.stringify(value);if(fingerprints.g
 function state(){return data?.state||{};}
 function person(){return state().you?.state||{};}
 function name(id){if(!id)return 'The scene';if(data?.names?.[id])return data.names[id];const s=state();return [s.you,s.here,...(s.present||[]),...(s.holding||[]),...(s.places||[]),...(data.people||s.knows||[]).map(x=>({id:x.who,...x}))].find(x=>x?.id===id)?.name||'Someone / something unrecorded';}
-function entities(){const s=state();return [s.you,s.here,...(s.holding||[]),...(s.present||[]),...(s.places||[])].filter(Boolean);}
+function entities(){const s=state();return [s.you,s.here,...(s.holding||[]),...(s.present||[]),...(s.places||[]),...(data.people||[])].filter(Boolean);}
 function empty(target,text){target.replaceChildren(el('p',text,'empty'));}
 function setPage(next){if(!$('page-'+next))next='play';page=next;localStorage.setItem('gr-page',next);for(const n of document.querySelectorAll('.page'))n.hidden=n.id!=='page-'+next;for(const b of document.querySelectorAll('[data-page]')){b.classList.toggle('selected',b.dataset.page===next);b.setAttribute('aria-current',b.dataset.page===next?'page':'false');}placeWatchControls();if(next==='atlas')renderAtlas();if(next==='settings'&&data&&!modelsLoaded)connectModels();}
 const watchComposer=$('watch-controls').parentElement;
@@ -248,7 +249,7 @@ let logRecordPopover,logRecordKey;
 function positionLogRecord(){
  if(!logRecordPopover?.matches(':popover-open'))return;
  const trigger=document.querySelector('[data-log-record="'+CSS.escape(logRecordKey)+'"]');
- if(!trigger||$('detail-log-view').hidden){logRecordPopover.hidePopover();return;}
+ if(!trigger||!trigger.getClientRects().length){logRecordPopover.hidePopover();return;}
  const rect=trigger.getBoundingClientRect(),height=logRecordPopover.offsetHeight,width=logRecordPopover.offsetWidth;
  if(rect.bottom<0||rect.top>innerHeight){logRecordPopover.hidePopover();return;}
  logRecordPopover.style.left=Math.max(8,Math.min(rect.right-width,innerWidth-width-8))+'px';
@@ -291,7 +292,7 @@ function render(){if(!data)return;const s=state(),p=person();$('auto').checked=d
  change('graph',[s.here,s.edges,s.places],()=>{if(page==='atlas'&&!mapId)renderAtlas();});
  change('nearby',s.present,()=>{const people=(s.present||[]).filter(x=>['person','agent','fighter','hireling','drifter'].includes(x.type)||x.state?.hp!=null);$('nearby-count').textContent=people.length;$('nearby').replaceChildren(...people.map(x=>entityRow(x)));$('features').replaceChildren(...(s.present||[]).filter(x=>!people.includes(x)).map(x=>entityRow(x)));if(!people.length)empty($('nearby'),'No characters recorded nearby.');});
  change('inventory',[s.holding,data.organization],renderInventory);
- change('journal',[s.knows,data.people,s.relations,s.goals,p.memory,data.journalMemories,data.notes,data.documents,s.places,s.holding],renderJournal);
+ change('journal',[s.knows,data.people,s.present,s.relations,s.goals,p.memory,data.journalMemories,data.notes,data.documents,s.places,s.holding],renderJournal);
  renderEvents();storyboard.update();renderActions();renderQuests();renderReadied();
  change('maps',data.maps,()=>{$('map-list').replaceChildren(...[...(data.maps||[])].reverse().map(m=>{const b=button(m.title,()=>{mapId=m.id;renderAtlas();},'map-entry');b.append(el('small',new Date(m.created).toLocaleString()));return b;}));if(page==='atlas')renderAtlas();});
  change('watches',data.watchers,()=>{$('watches').replaceChildren(...(data.watchers||[]).map(w=>{const row=el('div',w.kind+' '+w.value+' · '+w.status,'note');if(w.error)row.append(el('small',w.error));row.append(button('Remove',async()=>{await api('watch',{stop:w.id});await load();},'quiet'));return row;}));});
@@ -307,12 +308,47 @@ function glyph(x){return x.state?.weapon?'⚔':x.state?.capacity!=null?'◒':x.t
 function itemTile(x){const b=button('',()=>openEntity(x.id),'item');b.append(el('span',glyph(x),'glyph'),el('strong',x.name));if(x.count||x.state?.count)b.append(el('span','×'+(x.count||x.state.count),'item-count'));if(x.state?.capacity!=null)b.append(el('small',(x.state.left??'?')+'/'+x.state.capacity+' water'));return b;}
 function ready(x){return (data.organization?.[x.id]||(x.state?.weapon?'ready':'backpack'))==='ready';}
 function renderInventory(){const items=state().holding||[];$('inventory-mini').replaceChildren(...items.slice(0,6).map(itemTile));$('equipment').replaceChildren(...items.filter(ready).map(itemTile));$('inventory-full').replaceChildren(...items.filter(x=>!ready(x)).map(itemTile));if(!$('equipment').children.length)empty($('equipment'),'Mark items Ready in their details.');const known=items.every(x=>x.state?.bulk!=null),bulk=items.reduce((a,x)=>a+(Number(x.state?.bulk)||0)*(x.count||x.state?.count||1),0);$('load').textContent=(known?'Load ':'Known bulk ')+bulk.toFixed(1)+' / '+(person().carry??'?');}
-function renderJournal(){const s=state();$('people').replaceChildren(...(s.knows||[]).map(x=>{const r=entityRow({id:x.who||x.id,name:x.name,description:x.note||''});r.append(el('small','Your standing '+(x.standing??'—')));return r;}));
+function renderPeople(){
+ const people=knownPeople(data),self=state().you?.id,labels=new Map(people.map(p=>[p.id,p.name||p.id]));
+ const label=id=>id===self?'You':labels.get(id)||name(id);
+ $('people').replaceChildren(...people.map(p=>{
+   const card=el('article',null,'person-card'),header=el('div',null,'person-heading');
+   const description=p.description||p.state?.description||p.note||'No description observed yet.';
+   const title=button(p.name||p.id,()=>{const root=openDialog(p.name||p.id);renderEntity(root,{...p,state:{...(p.state||{}),description}});},'person-name');
+   title.title=description;title.setAttribute('aria-description',description);card.title=description;
+   header.append(title,logRecordMeta('',p,'Reported person details','person-'+p.id));
+   const badges=el('div',null,'person-facts');
+   const standing=Number.isFinite(p.standing)?(p.standing>0?'+':'')+p.standing:'Unknown';
+   badges.append(el('span','Standing '+standing,'person-standing'));
+   const faction=p.faction??p.state?.faction;
+   if(faction)badges.append(el('span',typeof faction==='object'?faction.name||faction.id||'Known faction':data.names?.[faction]||faction,'person-faction'));
+   if(p.here)badges.append(el('span','Here now','person-presence'));
+   card.append(header,badges);return card;
+ }));
+ if(!people.length)empty($('people'),'People you meet will appear here.');
+ const groups=relationshipGroups(state().relations,self);
+ $('relationships').replaceChildren(...groups.map(group=>{
+   const card=el('article',null,'relationship-card'),head=el('div',null,'person-heading');
+   const title=group.name|| (group.other?label(group.other):group.members.map(label).join(' · '))||'Recorded connection';
+   head.append(el('strong',title),logRecordMeta('',group.records,'Reported relationship details','relation-'+group.key));
+   card.append(head,el('span',group.kind.replaceAll('_',' '),'relationship-kind'));
+   for(const link of group.links){const row=el('div',null,'relationship-line');
+     row.append(el('span',link.from&&link.to?label(link.from)+' → '+label(link.to):'Shared connection'));
+     if(link.standing!=null)row.append(el('span','Standing '+(link.standing>0?'+':'')+link.standing,'person-standing'));
+     if(link.note)row.append(el('p',link.note));
+     card.append(row);
+   }
+   return card;
+ }));
+ if(!groups.length)empty($('relationships'),'No explicit relationship records reported yet.');
+ positionLogRecord();
+}
+function renderJournal(){const s=state();renderPeople();
  $('notes').replaceChildren(...(data.notes||[]).map(n=>{const d=el('div',n.text,'note');d.prepend(el('small','LOCAL NOTE'));d.append(button('Remove',async()=>{await api('local',{notes:data.notes.filter(x=>x.id!==n.id)});await load();},'quiet'));return d;}));
  $('memories').replaceChildren(...[...(data.journalMemories||[])].reverse().map(n=>{const d=el('div',n.text,'note');d.prepend(el('small','SAVED JOURNAL MEMORY · '+n.title));d.append(button('Edit',()=>recordForm('memory',n),'quiet'));return d;}),...[...(person().memory||[])].reverse().map(n=>{const d=el('div',n.text,'note');d.prepend(el('small','CHARACTER MEMORY'));return d;}));
  for(const id of ['goals']){$(id).replaceChildren(...(s.goals||[]).filter(g=>g.status==='active'||!g.status).map(g=>{const n=el('div',null,'goal');n.append(el('span',g.text));if(id==='goals')n.append(button('Done',()=>genericAction('intend',{id:g.id,status:'done'},'Complete this goal')));return n;}));if(!$(id).children.length)empty($(id),'No active intentions recorded.');}
  $('documents').replaceChildren(...(data.documents||[]).map(doc=>{const row=button(doc.title,()=>{const root=openDialog(doc.title);paragraph(root,doc.text);paragraph(root,'Saved when seen · '+new Date(doc.lastSeen).toLocaleString()+(doc.location?' · '+doc.location:''),'caption');if(doc.versions?.length)root.append(details(doc.versions,'Earlier observed versions'));},'document-entry');return row;}));if(!data.documents?.length)empty($('documents'),'Documents are archived when their text is observed or inspected.');
- $('relationships').replaceChildren();for(const relation of s.relations||[]){const from=relation.from||relation.a||relation.who,to=relation.to||relation.b||relation.other;const row=el('div',null,'note');row.append(el('p',(from?name(from):'Relationship')+(to?' → '+name(to):'')),el('p',relation.note||relation.kind||relation.type||relation.text||'Observed connection'),details(relation,'Reported details'));$('relationships').append(row);}if(!$('relationships').children.length)empty($('relationships'),'No explicit relationship records reported. Known standing is shown beside each person.');$('places').replaceChildren(...(s.places||[]).map(x=>entityRow(x)));
+ $('places').replaceChildren(...(s.places||[]).map(x=>entityRow(x)));
 }
 const movement=new Set(['arrived','left','moved','following','stayed','boarded','alighted']),combat=new Set(['checked','hit','missed','attacked','hurt','wounded','healed','downed','died','warded','rose','yielded']),items=new Set(['given','taken','put','dropped','found','shown','read','wrote','filled','drank','bound','released']);
 function eventText(e){const p=e.payload||{},who=name(p.by||p.who||p.entity||e.actor);if(p.text)return p.text;switch(e.kind){case'arrived':return who+' arrived'+(p.following?' following '+name(p.following):'')+'.';case'left':return who+' left'+(p.to?' for '+name(p.to):'')+'.';case'moved':return who+' moved to '+name(p.to)+'.';case'checked':return (p.skill||'Check')+': '+(p.roll!=null?'rolled '+p.roll+' + '+(p.mod||0)+' = ':'')+p.total+' vs '+p.dc+' · '+(p.success?'Passed':'Missed');case'given':return who+' gave '+name(p.item)+' to '+name(e.target)+'.';case'found':return who+' discovered '+name(p.thing)+'.';case'drank':return who+' drank'+(p.water!=null?' · water now '+p.water:'')+'.';case'hit':return who+' hit '+name(e.target)+' for '+(p.dmg??'?')+(Number.isFinite(p.hp)?' · '+p.hp+' HP remaining':'');case'progressed':return (p.skill||'Skill')+' progressed · '+(p.how||'');case'sweated':return 'Water cost: '+p.cost+' · remaining '+p.water;case'act':return (p.verb||'Action')+' '+(p.target?name(p.target):'');default:return e.kind.replaceAll('_',' ')+(p.why?' · '+p.why:'')+(p.name?' · '+p.name:'');}}

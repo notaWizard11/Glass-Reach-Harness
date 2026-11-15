@@ -1,3 +1,4 @@
+import {knownPeople} from './people.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -23,7 +24,7 @@ export class Store {
         rule.outcome=request?.result?.reason||(rule.status==='complete'?'Game confirmed the command.':'The server restarted during delivery. Check the game record.');
       }
     }
-    for(const c of Object.values(this.data.characters))if(c.state){captureDocuments(c,c.state.holding||[]);c.people??=c.state.knows||[];}
+    for(const c of Object.values(this.data.characters))if(c.state){captureDocuments(c,c.state.holding||[]);c.people=knownPeople(c);}
     await this.save(); return this;
   }
   profile(id) { const p=this.data.profiles.find(x=>x.id===id); if(!p) throw new Error('Character profile not found.'); return p; }
@@ -49,7 +50,7 @@ export function ingest(c, raw, events=[]) {
   for(const e of raw.exits||[]) edges.push({...e,from:raw.here.id,observedAt:new Date().toISOString()});
   c.state={...raw,places,edges,updated:new Date().toISOString(),connection:'Live'};
   captureDocuments(c,raw.holding||[]);
-  c.people=unique([...(c.people||[]),...(raw.knows||[]).map(p=>({...p,id:p.who||p.id}))].map(p=>({...p,id:p.who||p.id})));
+  c.people=knownPeople(c);
   c.historyCursor=Math.max(c.historyCursor||0,...events.map(e=>Number(e.seq)||0));
   return c.state;
 }

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Redesigned people cards with standing, known faction and hover descriptions; fixed directed relationship rendering and moved raw records into overlay controls.
+
 - Replaced Approvals with evidence-backed quest discovery and progress tracking; added conversational local quest/memory saving.
 - Split People & relationships into its own tab, moved places to Atlas, and added durable observed-document copies to Journal.
 

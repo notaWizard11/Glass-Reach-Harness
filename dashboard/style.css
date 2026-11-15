@@ -462,3 +462,6 @@
 .autopilot-panel>.inline{margin-top:12px}
 #watch-controls .autopilot-panel details{margin:12px 0}
 .composer #watch-controls{max-height:58vh;overflow:auto}
+.presence-controls{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.65rem 0;border-bottom:1px solid var(--line);margin-bottom:.6rem}
+.presence-controls>span:first-child{font-weight:600}
+.presence-controls>.caption{flex-basis:100%;margin:0}

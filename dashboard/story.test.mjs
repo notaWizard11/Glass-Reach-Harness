@@ -5,6 +5,43 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildScenes,storyPage,searchHistory,summarizeHistory,sceneEvidence} from './story.mjs';
 import {startServer} from './server.mjs';
+import {Store} from './store.mjs';
+
+test('away bookmarks freeze both boundaries, queue while busy, and survive restart',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'gr-away-test-'));
+ const app=await startServer({demo:true,port:0,dataDir:dir,liveIntervalMs:20});t.after(()=>app.stop());
+ let csrf;
+ const call=async(path,body)=>{const response=await fetch(app.url+'api/'+path,{method:body===undefined?'GET':'POST',headers:{'X-Glass-Reach-Dashboard':'1','Content-Type':'application/json',...(csrf?{'X-CSRF-Token':csrf}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:response.status,data:await response.json()};};
+ csrf=(await call('session')).data.csrf;
+ const c=app.store.character('aaron');
+ await call('story/presence',{status:'away'});
+ const bookmark=c.awayBookmarks[0],start=bookmark.startSeq;
+ await call('story/presence',{status:'away'});
+ assert.equal(c.awayBookmarks.length,1,'repeated departure must not move the bookmark');
+ c.events.push({seq:start+1,t:100,kind:'say',actor:'sera',payload:{text:'During the absence.'}});c.state.cursor=start+1;
+ c.agentStatus='working';
+ await call('story/presence',{status:'active'});
+ assert.equal(bookmark.status,'queued');assert.equal(bookmark.endSeq,start+1);
+ c.events.push({seq:start+2,t:101,kind:'say',actor:'sera',payload:{text:'After returning.'}});c.state.cursor=start+2;
+ await call('story/presence',{status:'active'});
+ assert.equal(bookmark.endSeq,start+1);
+ c.agentStatus='idle';
+ for(let n=0;n<100&&bookmark.status!=='complete';n++)await new Promise(resolve=>setTimeout(resolve,10));
+ assert.equal(bookmark.status,'complete');
+ const recap=c.recaps.find(r=>r.bookmark===bookmark.id);
+ assert.equal(recap.count,1);assert.equal(recap.start,start+1);assert.equal(recap.end,start+1);assert.equal(c.lastReadSeq,undefined);
+ await call('story/presence',{status:'away'});await call('story/presence',{status:'active'});
+ for(let n=0;n<100&&c.awayBookmarks.at(-1).status!=='complete';n++)await new Promise(resolve=>setTimeout(resolve,10));
+ assert.equal(c.recaps.at(-1).text,'No recorded game events in this interval.');
+ c.historyCoverage={pending:true};
+ assert.equal((await call('story/presence',{status:'away'})).status,400);
+ c.historyCoverage={pending:false};
+ await call('story/presence',{status:'away'});
+ const restored=await new Store(dir,true).init();
+ assert.equal(restored.character('aaron').awayBookmarks.at(-1).status,'away');
+ assert.equal(restored.character('aaron').awayBookmarks[0].endSeq,start+1);
+ assert.equal(restored.character('aaron').recaps.filter(r=>r.bookmark===bookmark.id).length,1);
+});
 
 const character=()=>({names:{gate:'Gate Yard',road:'Salt Road',sera:'Sera'},state:{you:{id:'me'}},events:Array.from({length:1000},(_,i)=>({seq:i+1,t:i*60,kind:'say',actor:'sera',payload:{text:i===2?'Hollis left a silver wedge.':'The road is quiet.'},observedLocation:'gate'}))});
 test('full archive search and scene pagination preserve events beyond session limit',()=>{

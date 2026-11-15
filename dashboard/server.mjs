@@ -19,6 +19,13 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
  const csrf=randomBytes(24).toString('hex'),watchers=new Map(),liveProfiles=new Map();
  const savingReadied=new WeakSet();
  const storyJobs=new Set();
+ const presenceBusy=new Set();
+ async function tickReturn(p){
+   const c=store.character(p.id),bookmark=(c.awayBookmarks||[]).find(b=>b.status==='queued');
+   if(!bookmark||c.agentStatus==='working'||storyJobs.has(p.id)||c.historyCoverage?.pending||!['Live','Demo'].includes(c.state?.connection))return;
+   bookmark.status='summarizing';
+   try{await startRecap(p,{bookmark:bookmark.id});}catch(error){bookmark.status='error';bookmark.error=error.message;await store.save();}
+ }
  const autoJobs=new Map();
  async function pausePilot(p,reason){const c=store.character(p.id);if(!c.autopilot?.enabled)return;pauseAutopilotState(c,reason);autoLog(c,'paused',reason);await store.save();await agent.stopThread(c.autopilotThread);}
  function tickPilot(p){
@@ -104,7 +111,11 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
    if(c.agentStatus==='working'||storyJobs.has(p.id))throw new Error('Wait for the current response or stop it first.');
    const snapshot=c.events.slice();
    let events=snapshot;
-   if(options.scene){
+   const bookmark=options.bookmark?(c.awayBookmarks||[]).find(item=>item.id===options.bookmark):null;
+   if(options.bookmark&&!bookmark?.returnedAt)throw new Error('Choose a completed away interval.');
+   if(bookmark){
+     events=events.filter(event=>event.seq>bookmark.startSeq&&event.seq<=bookmark.endSeq);
+   }else if(options.scene){
      const scene=buildScenes(c).find(item=>item.id===String(options.scene));
      if(!scene)throw new Error('This scene is no longer available. Refresh the storyboard.');
      events=sceneEvidence(c,scene).events;
@@ -117,13 +128,14 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
    if(c.historyCoverage?.pending)throw new Error('History is still catching up. Try again after the next sync.');
    const job={id:randomUUID(),status:'working',scene:options.scene||null,start:events[0]?.seq||0,
      end:events.at(-1)?.seq||0,range:options.range||'unread',count:events.length,coverage:coverageText(c),created:new Date().toISOString()};
+   if(bookmark)Object.assign(job,{bookmark:bookmark.id,awayAt:bookmark.awayAt,returnedAt:bookmark.returnedAt});
    c.recapJob=job;c.stopRequested=false;c.agentStatus='working';storyJobs.add(p.id);
    try{await store.save();}catch(error){storyJobs.delete(p.id);c.agentStatus='idle';job.status='error';job.error=error.message;throw error;}
    (async()=>{
      try{
        const text=await summarizeHistory({
          character:c,events,cancelled:()=>c.stopRequested,save:()=>store.save(),
-         question:options.scene?'Analyze all the supplied scene logs, then reflect in the character’s inner voice. Write a short prose summary of 80–150 words in one or two paragraphs, without headings or bullet points. Focus on what happened, what changed, and what remains uncertain. Cite supporting events.':options.question||'Tell the story of this interval in chronological order. Include changes for my character, who arrived or left, important dialogue and unresolved matters. Cite every factual paragraph.',
+         question:options.scene?'Analyze all the supplied scene logs, then reflect in the character’s inner voice. Write a short prose summary of 80–150 words in one or two paragraphs, without headings or bullet points. Focus on what happened, what changed, and what remains uncertain. Cite supporting events.':options.question||'Give a returning player a concise briefing of the high points during this interval. Use 3–6 short bullets, at most 200 words. Prioritize consequential developments, changes affecting the character, unresolved questions and matters needing attention. Group related events; omit routine arrivals, departures, repetition and inconsequential dialogue unless they changed the situation. Do not narrate scene by scene or enumerate the log. Distinguish witnessed facts from reported claims and uncertainty. Cite supporting event IDs. If nothing consequential happened, say so briefly. Do not invent urgency.',
          progress:message=>{job.progress=message;c.agentPreview=message;},
          ask:async(question,evidence)=>demo?evidence.split('\n').slice(0,8).map(line=>line.split(' {')[0]).join('\n\n'):
            (await agent.reply(p,question,options.scene?'scene-summary':'recap',undefined,undefined,evidence)).reply,
@@ -131,9 +143,10 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
        if(c.stopRequested)throw new Error('Recap stopped.');
        Object.assign(job,{status:'complete',text});
        (c.recaps??=[]).push({...job});
+       if(bookmark){bookmark.status='complete';bookmark.recapId=job.id;delete bookmark.error;}
        if(job.scene)(c.sceneNarratives??={})[job.scene]={end:job.end,text};
        c.agentStatus='idle';
-     }catch(error){job.status='error';job.error=error.message;c.agentStatus='idle';}
+     }catch(error){job.status='error';job.error=error.message;c.agentStatus='idle';if(bookmark){bookmark.status='error';bookmark.error=error.message;}}
      finally{storyJobs.delete(p.id);c.agentPreview='';c.activeThread=null;await store.save();}
    })().catch(()=>{job.status='error';job.error='The local recap could not be saved.';});
    return job;
@@ -181,6 +194,28 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
        return json(res,200,{lastReadSeq:c.lastReadSeq});
      }
      if(route==='POST /api/story/recap')return json(res,202,await startRecap(p,b));
+     if(route==='POST /api/story/presence'){
+       if(presenceBusy.has(id))throw new Error('A status change is already being saved.');
+       presenceBusy.add(id);
+       try{
+         if(b.retry){
+           const bookmark=(c.awayBookmarks||[]).find(item=>item.id===b.retry&&item.status==='error');
+           if(!bookmark)throw new Error('No failed away summary to retry.');
+           bookmark.status='queued';delete bookmark.error;
+         }else{
+           if(!['away','active'].includes(b.status))throw new Error('Choose Away or Active.');
+           const current=(c.awayBookmarks||[]).find(item=>item.status==='away');
+           if((b.status==='away'&&!current)||(b.status==='active'&&current)){
+             await game.refresh(p);
+             if(!['Live','Demo'].includes(c.state?.connection)||c.historyCoverage?.pending)throw new Error('Wait for a successful, complete game sync before changing status. Your existing bookmark is unchanged.');
+             const seq=Math.max(c.state?.cursor||0,c.events.at(-1)?.seq||0),time=new Date().toISOString();
+             if(b.status==='away')(c.awayBookmarks??=[]).push({id:randomUUID(),status:'away',awayAt:time,startSeq:seq});
+             else Object.assign(current,{status:'queued',returnedAt:time,endSeq:seq});
+           }
+         }
+         await store.save();await tickReturn(p);return json(res,200,packet(id));
+       }finally{presenceBusy.delete(id);}
+     }
      if(route==='POST /api/story/prose')return json(res,202,await writeSceneProse(p,b.scene));
      if(route==='POST /api/inspect')return json(res,200,await game.read(p,b.op,b.args||{}));
      if(route==='POST /api/action'){await pausePilot(p,'Paused for a manual game action.');return json(res,200,await execute(p,b.op,b.args,b.requestId));}
@@ -322,7 +357,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
  const liveTimer=setInterval(async()=>{
    nextLiveAt=Date.now()+liveIntervalMs;
    if(liveBusy)return;liveBusy=true;
-   const active=new Set([...liveProfiles.values(),...store.data.profiles.filter(p=>store.character(p.id).autopilot?.enabled).map(p=>p.id)]);
+   const active=new Set([...liveProfiles.values(),...store.data.profiles.filter(p=>store.character(p.id).autopilot?.enabled||store.character(p.id).awayBookmarks?.some(b=>['away','queued'].includes(b.status))).map(p=>p.id)]);
    const armed=store.data.profiles.filter(p=>store.character(p.id).readied?.some(rule=>rule.status==='armed')).map(p=>p.id);
    try{for(const id of new Set([...active,...armed])){
      const p=store.profile(id),c=store.character(id);
@@ -332,6 +367,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
        finally{liveChecking=null;}
      }
      try{if(!autoJobs.has(id))await runReadied({profile:p,character:c,store,execute,demo,saving:savingReadied});tickPilot(p);}catch{/* Leave any interrupted delivery unconfirmed. */}
+     try{await tickReturn(p);}catch{/* Saved bookmark remains available for retry. */}
    }}finally{liveBusy=false;}
  },liveIntervalMs);liveTimer.unref();
  const stop=()=>{clearInterval(liveTimer);clearInterval(background);for(const w of watchers.values())clearTimeout(w.timer);watchers.clear();agent.close();server.close();};

@@ -544,7 +544,7 @@ $('manage').onclick=()=>{const root=openDialog('Add a character profile');paragr
 $('seats').onclick=async()=>{try{const r=await api('inspect',{op:'seats'});if(r.ok===false)throw new Error(r.reason);const root=$('seat-results');root.replaceChildren();for(const t of r.templates||[])root.append(button('Create '+t.template,()=>{const box=openDialog('Create a '+t.template);paragraph(box,t.doc||'Create a new character under this profile. This changes the active seat on its game connection.');const n=field(box,'Character name','text',data.profile.name),description=field(box,'Appearance (set when created)','textarea');box.append(button('Create character in game',()=>perform('join',{template:t.template,name:n.value,description:description.value}),'primary'));}));for(const seat of r.seats||[])root.append(el('p',(seat.name||seat.entity)+' · '+(seat.held||seat.embodied_by?'Occupied':'Seat listed')));root.append(details(r,'Seat availability details'));}catch(e){toast(e.message);}};
 const autopilotUI=mountAutopilot({api,getData:()=>data,getProfile:()=>profile,reload:load,openDialog,field,button,paragraph,details,onError:error=>toast(error.message),openSettings:()=>setPage('settings')});
 const storyboard=mountStoryboard({
- api,getData:()=>data,getProfile:()=>profile,onError:error=>toast(error.message),
+ api,reload:load,getData:()=>data,getProfile:()=>profile,onError:error=>toast(error.message),
  openDetails:(text,event)=>{const root=openDialog('Recorded event #'+event.seq);paragraph(root,text);root.append(details(event,'Original record'));}
 });
 $('quick-catch-up').onclick=()=>storyboard.catchUp();

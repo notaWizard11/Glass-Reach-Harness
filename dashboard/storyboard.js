@@ -1,8 +1,27 @@
 import {storyRows} from './timeline.mjs';
-export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
+export function mountStoryboard({api,getData,getProfile,onError,openDetails,reload}){
   const $=id=>document.getElementById(id);
   const node=(tag,text,cls)=>{const item=document.createElement(tag);if(text!=null)item.textContent=text;if(cls)item.className=cls;return item;};
   const button=(text,action)=>{const item=node('button',text);item.type='button';item.onclick=()=>Promise.resolve().then(action).catch(onError);return item;};
+  let presencePending=false;
+  const presence=node('div',null,'presence-controls'),presenceStatus=node('span'),presenceNote=node('span',null,'caption');
+  const presenceButton=button('Set Away',async()=>{
+    if(presencePending)return;
+    presencePending=true;presenceButton.disabled=true;
+    try{
+      const away=getData()?.awayBookmarks?.some(b=>b.status==='away');
+      await api('story/presence',{status:away?'active':'away'},getProfile());
+      await reload();
+      presenceNote.textContent=away?'Return bookmarked. Your highlights will appear here.':'Departure bookmarked. Live collection continues when enabled.';
+      setView('story');
+    }finally{presencePending=false;presenceButton.disabled=false;}
+  });
+  const retryReturn=button('Retry away summary',async()=>{
+    const failed=[...(getData()?.awayBookmarks||[])].reverse().find(b=>b.status==='error');
+    if(failed){await api('story/presence',{retry:failed.id},getProfile());await reload();}
+  });
+  retryReturn.hidden=true;presence.append(presenceStatus,presenceButton,retryReturn,presenceNote);
+  document.querySelector('.story-controls').prepend(presence);
   let activeProfile,signature='',requestVersion=0,scenes=[],pageInfo,query='',searchTimer,view='story';
   const collapsedScenes=new Set();
   let nextProseAt=0;
@@ -17,7 +36,7 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
   function narrative(text){
     const content=node('div',null,'scene-narrative');
     const refs=[...new Set([...text.matchAll(/\[#(\d+)\]/g)].map(match=>match[1]))];
-    for(const paragraph of text.split(/\n\s*\n/)){
+    for(const paragraph of text.split(/\n\s*\n|\n(?=\s*[-*•] )/)){
       content.append(node('p',paragraph.replace(/\[#\d+\]/g,'').replace(/ {2,}/g,' ').trim()));
     }
       if(refs.length){
@@ -121,6 +140,12 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
   let recapSignature='';
   function update(){
     const data=getData();if(!data)return;
+    const bookmarks=data.awayBookmarks||[],away=bookmarks.find(b=>b.status==='away'),latest=bookmarks.at(-1);
+    presenceStatus.textContent=away?'Away since '+new Date(away.awayAt).toLocaleString():'Active';
+    presenceButton.textContent=away?'Return to Active · summarize':'Set Away';
+    presenceButton.disabled=presencePending;
+    retryReturn.hidden=!bookmarks.some(b=>b.status==='error');
+    presenceNote.textContent=away?'Your departure is bookmarked. Returning summarizes only this absence.':latest?.status==='queued'?'Return bookmarked · briefing queued until Codex and history are ready.':latest?.status==='summarizing'?'Preparing the high points from your absence…':latest?.status==='error'?'Summary failed: '+latest.error:latest?.status==='complete'?'Your away briefing is saved below.':'Mark your departure, then return for an automatic highlights briefing. This does not change game behaviour or autopilot.';
     if(activeProfile!==getProfile()){
       activeProfile=getProfile();signature='';recapSignature='';scenes=[];pageInfo=null;
       collapsedScenes.clear();
@@ -143,7 +168,8 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
       for(const recap of [...recaps].reverse().filter(recap=>!recap.scene)){
         const card=node('details',null,'recap-card');
         card.open=recap.id===job?.id;
-        card.append(node('summary',(recap.scene?'Scene summary':'Catch-up')+' · '+recap.count+' events · '+new Date(recap.created).toLocaleString()));
+        card.append(node('summary',(recap.bookmark?'While you were away':'Catch-up highlights')+' · '+new Date(recap.created).toLocaleString()));
+        if(recap.bookmark)card.append(node('p',new Date(recap.awayAt).toLocaleString()+' → '+new Date(recap.returnedAt).toLocaleString(),'caption'));
         card.append(node('p',recap.coverage,'caption'),narrative(recap.text));
         if(recap.end){
           const selected=activeProfile;

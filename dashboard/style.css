@@ -418,3 +418,15 @@
 .log-scene::before{top:0}.log-scene::after{bottom:0}
 .log-scene-label{font-size:10px;color:var(--muted);padding:1px 0 7px;letter-spacing:.02em}
 .log-scene>.story-entry{margin-left:0;margin-right:0}
+.story-feed .story-entry{padding:7px 10px;margin-top:5px;margin-bottom:5px}
+.story-feed .event-header{gap:5px;letter-spacing:.2px;line-height:1.3}
+.story-feed .event-text{font-size:13px;line-height:1.45;margin-top:5px}
+.story-feed blockquote.event-text{padding:4px 9px;margin-bottom:0}
+.log-entry-meta{display:inline-flex;align-items:center;gap:7px;margin-left:auto;white-space:nowrap}
+.log-entry-meta time{margin-left:0}
+.event-header .log-record-toggle{font-size:10px;color:var(--muted);padding:1px 3px;border:1px solid transparent;border-radius:3px}
+.event-header .log-record-toggle:hover,.event-header .log-record-toggle[aria-expanded=true]{color:var(--gold);border-color:var(--line)}
+.log-record-popover{position:fixed;inset:auto;margin:0;width:min(440px,calc(100vw - 16px));max-height:min(420px,calc(100dvh - 16px));overflow:auto;padding:12px;background:var(--dialog);color:var(--text);border:1px solid var(--dialog-line);border-radius:6px;box-shadow:0 8px 30px #0007}
+.log-record-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px}
+.log-record-heading button{padding:1px 6px;font-size:17px}
+.log-record-popover pre{font:11px/1.5 Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;margin:10px 0 0}

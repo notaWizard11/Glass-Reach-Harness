@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Denser detailed-log entries with timestamp-adjacent record popovers that overlay the UI without expanding rows.
 - Separate Auto prose model selection, quieter storyboard chapters, and subtle scene rails in the detailed log that remain aligned when filtering.
 - Newest-first, collapsible compact scene cards, automatic book-style prose incorporating player dialogue and actions, and short inner-reflection summaries.
 - Storyboard scene cards with expandable original events, activity strips, and a separate detailed log.

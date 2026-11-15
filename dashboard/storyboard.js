@@ -10,22 +10,22 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
   proseToggle.type='checkbox';proseToggle.checked=localStorage.getItem('gr-auto-prose')!=='false';
   proseToggle.onchange=()=>localStorage.setItem('gr-auto-prose',String(proseToggle.checked));
   proseControl.append(proseToggle,document.createTextNode('Auto prose'));
-  proseControl.title='Use Codex to write scene passages as new records arrive. Uses your conversation model.';
+  proseControl.title='Use Codex to write scene passages as new records arrive. Choose its model in Settings → Auto prose.';
   $('storyboard-view').prepend(proseControl);
   const time=t=>Number.isFinite(t)?'Day '+(Math.floor(t/86400)+1)+' · '+String(Math.floor(t%86400/3600)).padStart(2,'0')+':'+String(Math.floor(t%3600/60)).padStart(2,'0'):'Time unrecorded';
 
   function narrative(text){
     const content=node('div',null,'scene-narrative');
+    const refs=[...new Set([...text.matchAll(/\[#(\d+)\]/g)].map(match=>match[1]))];
     for(const paragraph of text.split(/\n\s*\n/)){
       content.append(node('p',paragraph.replace(/\[#\d+\]/g,'').replace(/ {2,}/g,' ').trim()));
-      const refs=[...new Set([...paragraph.matchAll(/\[#(\d+)\]/g)].map(match=>match[1]))];
+    }
       if(refs.length){
-        const sources=node('details',null,'scene-sources');sources.append(node('summary','Sources · '+refs.length));
+        const sources=node('details',null,'scene-sources');sources.append(node('summary','Sources'));
         const selected=getProfile();
         for(const ref of refs){const link=button('#'+ref,async()=>{const record=await api('event?seq='+ref,undefined,selected);openDetails(record.text,record.event);});link.className='quiet source-link';sources.append(link);}
         content.append(sources);
       }
-    }
     return content;
   }
   function setView(next){
@@ -60,7 +60,6 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
       summarize.className='scene-summarize';summarize.disabled=getData()?.agentStatus==='working';
       head.append(heading,summarize,node('small',time(scene.startTime)+' — '+time(scene.endTime)));
       shell.append(head,card);
-      if(scene.participants.length)card.append(node('p',scene.participants.join(' · '),'caption'));
       if(scene.prose)card.append(narrative(scene.prose));
       if(!scene.proseFresh){
         const job=getData()?.storyProseJob;
@@ -74,7 +73,8 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
       records.dataset.scene=scene.id;records.open=expanded.has(scene.id);
       const exchanges=(getData()?.messages||[]).filter(message=>message.timelineSeq>=scene.start&&message.timelineSeq<=scene.end);
       const rows=storyRows(scene.events,exchanges);
-      records.append(node('summary','Explore '+rows.length+' events, dialogue & player entries'));
+      records.append(node('summary','Scene record · '+rows.length+' entries'));
+      if(scene.participants.length)records.append(node('p',scene.participants.join(' · '),'caption'));
       for(const entry of rows){
         const row=node('div',null,'scene-record story-entry');row.dataset.kind=entry.category;
         if(entry.event){

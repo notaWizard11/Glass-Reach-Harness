@@ -28,8 +28,8 @@ test('demo integration: origins, persistence, actions, atlas, proposals and prof
  await call('agent',{text:'What should I do?'});session=(await call('session')).body;assert.ok(session.suggestions.length);assert.equal(session.events.length,before+1,'proposals do not execute');
  const q=session.suggestions[0];const approvals=await Promise.all([call('suggestion',{id:q.id}),call('suggestion',{id:q.id})]);assert.equal(approvals.filter(x=>x.body.status==='complete').length,1);assert.equal(approvals.filter(x=>x.status===400).length,1);assert.equal((await call('session')).body.events.length,before+2,'concurrent approvals execute only once');
  await call('agent',{text:'Draw the area',purpose:'atlas'});session=(await call('session')).body;assert.ok(session.maps[0].nodes.length>1);
- await call('settings',{model:'general-test',modelsByPurpose:{chat:'small-test',game:'large-test',atlas:'',suggestions:''}});
- const choices=(await call('session')).body;assert.equal(choices.model,'general-test');assert.equal(choices.modelsByPurpose.chat,'small-test');assert.equal(choices.modelsByPurpose.game,'large-test');
+ await call('settings',{model:'general-test',modelsByPurpose:{chat:'small-test',game:'large-test',prose:'prose-test',atlas:'',suggestions:''}});
+ const choices=(await call('session')).body;assert.equal(choices.model,'general-test');assert.equal(choices.modelsByPurpose.chat,'small-test');assert.equal(choices.modelsByPurpose.game,'large-test');assert.equal(choices.modelsByPurpose.prose,'prose-test');
  await call('settings',{masterPrompt:'Keep dialogue verbatim.'});await call('settings',{masterPrompt:'Keep it concise.'});session=(await call('session')).body;assert.ok(session.promptVersions.some(x=>x.text==='Keep dialogue verbatim.'));
  await call('local',{draft:'Do not lose this',notes:[{id:'n',text:'Local only'}]});await call('agent/reset',{});session=(await call('session')).body;assert.equal(session.messages.length,0);assert.equal(session.draft,'Do not lose this');assert.equal(session.notes.length,1);assert.ok(session.sessions.length);
  const second=(await call('profiles',{name:'Second Keeper',entityId:'second'})).body.id;const s2=(await call('session',undefined,second)).body;assert.equal(s2.draft,'');assert.equal(s2.notes.length,0);assert.equal(s2.messages.length,0);assert.equal(s2.state.you.id,'second');
@@ -83,6 +83,12 @@ test('interaction models override the general model with account-default fallbac
  assert.equal(modelForPurpose({model:'general',modelsByPurpose:{chat:'small',game:'large'}},'game'),'large');
  assert.equal(modelForPurpose({model:'general',modelsByPurpose:{atlas:''}},'atlas'),'general');
  assert.equal(modelForPurpose({model:''},'suggestions'),undefined);
+ const settings={model:'general',modelsByPurpose:{chat:'capable',game:'strong',prose:'cheap'}};
+ assert.equal(modelForPurpose(settings,'scene-story'),'cheap');
+ assert.equal(modelForPurpose(settings,'scene-summary'),'capable');
+ assert.equal(modelForPurpose(settings,'recap'),'capable');
+ assert.equal(modelForPurpose(settings,'game'),'strong');
+ assert.equal(modelForPurpose({model:'general',modelsByPurpose:{chat:'capable'}},'scene-story'),'general');
 });
 
 test('readied actions edit, disarm and fire once in the background',async t=>{

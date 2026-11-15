@@ -1,4 +1,17 @@
 const movement=new Set(['arrived','left','moved','following','stayed','boarded','alighted']);
+// Use the archive's scene boundaries even when rows are filtered or paginated.
+export function groupStoryRows(rows,scenes=[]){
+  const ordered=[...scenes].sort((a,b)=>a.start-b.start),groups=[];
+  for(const row of rows){
+    let lo=0,hi=ordered.length;
+    while(lo<hi){const mid=(lo+hi)>>1;if(ordered[mid].start<=row.order)lo=mid+1;else hi=mid;}
+    const scene=ordered[lo-1]||null,key=scene?.id||'unplaced';
+    let group=groups.at(-1);
+    if(!group||group.key!==key){group={key,scene,rows:[]};groups.push(group);}
+    group.rows.push(row);
+  }
+  return groups;
+}
 export function storyRows(events,messages){
   const lastSeq=Math.max(0,...events.map(e=>Number(e.seq)||0));
   const anchored=messages.filter(m=>Number.isFinite(m.timelineSeq)).map(m=>m.timelineSeq);

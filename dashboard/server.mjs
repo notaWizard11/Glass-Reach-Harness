@@ -44,7 +44,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
  const assets={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/storyboard.js':['storyboard.js','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
  async function body(req){let s='';for await(const chunk of req){s+=chunk;if(s.length>300000)throw new Error('Request is too large.');}return s?JSON.parse(s):{};}
  const json=(res,status,data)=>res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'}).end(JSON.stringify(data));
- const packet=id=>({...store.publicData(id),csrf,
+ const packet=id=>({...store.publicData(id),csrf,sceneIndex:buildScenes(store.character(id)).map(({id,title,start,end,startTime,endTime})=>({id,title,start,end,startTime,endTime})),
    liveNextAt:nextLiveAt,liveChecking:liveChecking===id,serverTime:Date.now(),
    sceneImageEnabled:!demo&&Boolean(process.env.OPENAI_API_KEY),sceneImageBusy:sceneRequests.has(id),
    watchers:[...watchers.values()].filter(x=>x.profileId===id).map(({timer,...x})=>x)});
@@ -158,7 +158,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      if(route==='POST /api/agent/reset'){if(c.agentStatus==='working')throw new Error('Stop the current reply first.');c.sessions??=[];c.sessions.push({time:new Date().toISOString(),messages:c.messages});c.messages=[];c.threadId=null;await store.save();return json(res,200,packet(id));}
      if(route==='POST /api/settings'){
        if(typeof b.masterPrompt==='string'&&b.masterPrompt!==store.data.masterPrompt){store.data.promptVersions.unshift({text:store.data.masterPrompt,time:new Date().toISOString()});store.data.promptVersions=store.data.promptVersions.slice(0,20);store.data.masterPrompt=b.masterPrompt;}
-       if(b.modelsByPurpose&&typeof b.modelsByPurpose==='object'){store.data.modelsByPurpose=Object.fromEntries(['chat','game','atlas','suggestions'].map(k=>[k,typeof b.modelsByPurpose[k]==='string'?b.modelsByPurpose[k]:'']));}
+       if(b.modelsByPurpose&&typeof b.modelsByPurpose==='object'){store.data.modelsByPurpose=Object.fromEntries(['chat','game','prose','atlas','suggestions'].map(k=>[k,typeof b.modelsByPurpose[k]==='string'?b.modelsByPurpose[k]:'']));}
        if(typeof b.liveFeed==='boolean')p.liveFeed=b.liveFeed;
        if(typeof b.model==='string')store.data.model=b.model;if(typeof b.instructions==='string')p.instructions=b.instructions;if(['manual','suggest'].includes(b.mode))p.mode=b.mode;
        await store.save();return json(res,200,packet(id));

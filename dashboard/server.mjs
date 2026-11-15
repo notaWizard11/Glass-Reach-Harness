@@ -6,6 +6,8 @@ import { execFile } from 'node:child_process';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Store } from './store.mjs';
+import {promptFor,promptCatalogue,promptRevision,savePrompt,reviewSchema} from './prompts.mjs';
+import {syncRules,rulesContext} from './rules-feed.mjs';
 import { Game, validateOperation } from './game.mjs';
 import { Agent } from './agent.mjs';
 import {applyRecords,recordPermissions,questStatuses} from './journal.mjs';
@@ -47,8 +49,8 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
    proseBusy=true;
    const job=c.storyProseJob={scene:scene.id,status:'working',started:new Date().toISOString()};
    (async()=>{try{
-     const text=await summarizeHistory({character:c,events,save:()=>store.save(),
-       question:'Write this scene as a short passage in an unfolding novel, in second person for the player character. Integrate the character’s actual dialogue, meaningful actions and confirmed results with surrounding events. Player requests are intentions, not proof of success; assistant results are secondary to game records. Compress routine movement, repeated checks and insignificant actions. Preserve consequential dialogue accurately. Use 120–220 words of flowing prose, without headings, lists or operation names. Cite factual paragraphs with event IDs. Do not invent atmosphere, causation, motives or outcomes.',
+     const text=await summarizeHistory({character:c,events,cacheVersion:promptRevision(store.data,'scene-story')+promptRevision(store.data,'master')+(c.rulesFeed?.version||0),save:()=>store.save(),
+       question:promptFor(store.data,'scene-story').task,
        ask:async(question,evidence)=>demo?events.filter(event=>['say','scene'].includes(event.kind)).map(event=>describeEvent(event,historicalNames(c))+' [#'+event.seq+']').join(' '):(await agent.reply(p,question,'scene-story',undefined,undefined,evidence)).reply});
      (c.sceneProse??={})[scene.id]={text,key,end:scene.end};job.status='complete';
    }catch(error){job.status='error';job.error=error.message;}
@@ -59,7 +61,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
  let nextLiveAt=Date.now()+liveIntervalMs,liveChecking=null;
  const mobile=process.env.GLASS_REACH_MOBILE_ORIGIN?new URL(process.env.GLASS_REACH_MOBILE_ORIGIN):null,login=process.env.GLASS_REACH_MOBILE_LOGIN;
  if(mobile&&(mobile.protocol!=='https:'||!mobile.hostname.endsWith('.ts.net')||mobile.pathname!=='/'||!login))throw new Error('Private phone access requires an exact Tailscale HTTPS origin and login.');
- const assets={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/storyboard.js':['storyboard.js','text/javascript'],'/people.mjs':['people.mjs','text/javascript'],'/autopilot-ui.js':['autopilot-ui.js','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
+ const assets={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/storyboard.js':['storyboard.js','text/javascript'],'/people.mjs':['people.mjs','text/javascript'],'/autopilot-ui.js':['autopilot-ui.js','text/javascript'],'/rules-ui.js':['rules-ui.js','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
  async function body(req){let s='';for await(const chunk of req){s+=chunk;if(s.length>300000)throw new Error('Request is too large.');}return s?JSON.parse(s):{};}
  const json=(res,status,data)=>res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'}).end(JSON.stringify(data));
  const packet=id=>({...store.publicData(id),csrf,sceneIndex:buildScenes(store.character(id)).map(({id,title,start,end,startTime,endTime})=>({id,title,start,end,startTime,endTime})),
@@ -81,7 +83,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
          while(offset<unseen.length&&batch.length<300){const event=unseen[offset],length=JSON.stringify(event).length;if(batch.length&&size+length>48000)break;batch.push(event);size+=length;offset++;}
          c.agentPreview='Finding story threads · '+offset+' of '+unseen.length+' records';
          const evidence=JSON.stringify({events:batch,names:historicalNames(c),existingQuests:(c.quests||[]).map(({id,title,status,text})=>({id,title,status,text}))});
-         const result=demo?{records:[{kind:'quest',id:'',title:'Investigate the lights beyond the ridge',text:'Sera saw three lights moving together. Find out what they were and where they stopped.',status:'discovered',sourceSeqs:[3]}]}:await agent.reply(p,'Find grounded quests in this part of the story. Use existing quest IDs for the same threads.','quests',undefined,undefined,evidence);
+         const result=demo?{records:[{kind:'quest',id:'',title:'Investigate the lights beyond the ridge',text:'Sera saw three lights moving together. Find out what they were and where they stopped.',status:'discovered',sourceSeqs:[3]}]}:await agent.reply(p,promptFor(store.data,'quests').task,'quests',undefined,undefined,evidence);
          if(c.stopRequested)throw new Error('Quest discovery stopped.');
          const valid=new Set(batch.map(event=>event.seq));
          count+=applyRecords(c,(result.records||[]).map(record=>({...record,sourceSeqs:(record.sourceSeqs||[]).filter(seq=>valid.has(seq))})),{allowed:['quest'],automatic:true}).length;
@@ -134,8 +136,8 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
    (async()=>{
      try{
        const text=await summarizeHistory({
-         character:c,events,cancelled:()=>c.stopRequested,save:()=>store.save(),
-         question:options.scene?'Analyze all the supplied scene logs, then reflect in the character’s inner voice. Write a short prose summary of 80–150 words in one or two paragraphs, without headings or bullet points. Focus on what happened, what changed, and what remains uncertain. Cite supporting events.':options.question||'Give a returning player a concise briefing of the high points during this interval. Use 3–6 short bullets, at most 200 words. Prioritize consequential developments, changes affecting the character, unresolved questions and matters needing attention. Group related events; omit routine arrivals, departures, repetition and inconsequential dialogue unless they changed the situation. Do not narrate scene by scene or enumerate the log. Distinguish witnessed facts from reported claims and uncertainty. Cite supporting event IDs. If nothing consequential happened, say so briefly. Do not invent urgency.',
+         character:c,events,cacheVersion:promptRevision(store.data,options.scene?'scene-summary':'recap')+promptRevision(store.data,'master')+(c.rulesFeed?.version||0),cancelled:()=>c.stopRequested,save:()=>store.save(),
+         question:options.scene?promptFor(store.data,'scene-summary').task:options.question||promptFor(store.data,'recap').task,
          progress:message=>{job.progress=message;c.agentPreview=message;},
          ask:async(question,evidence)=>demo?evidence.split('\n').slice(0,8).map(line=>line.split(' {')[0]).join('\n\n'):
            (await agent.reply(p,question,options.scene?'scene-summary':'recap',undefined,undefined,evidence)).reply,
@@ -229,6 +231,48 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
        if(typeof b.liveFeed==='boolean')p.liveFeed=b.liveFeed;
        if(typeof b.model==='string')store.data.model=b.model;if(typeof b.instructions==='string')p.instructions=b.instructions;if(['manual','suggest'].includes(b.mode))p.mode=b.mode;
        await store.save();return json(res,200,packet(id));
+     }
+     if(route==='GET /api/prompts')return json(res,200,{entries:promptCatalogue(store.data,p,c),master:{instructions:store.data.masterPrompt,revision:promptRevision(store.data,'master')},rules:rulesContext(c)});
+     if(route==='POST /api/prompts'){
+       savePrompt(store.data,b.key,b.value,b.revision);
+       for(const character of Object.values(store.data.characters))for(const prose of Object.values(character.sceneProse||{}))prose.key=null;
+       await store.save();return json(res,200,{ok:true});
+     }
+     if(route==='POST /api/rules/sync'){
+       await game.refresh(p);
+       if(!demo&&c.state?.connection!=='Live')throw new Error('Reconnect before checking engine rules.');
+       if(demo)await syncRules(c,()=>Promise.resolve({topic:'changes',version:1,text:'Rules changes in the fictional preview.\nv1: Demo only. No live mechanics are changed.'}),()=>store.save(),{force:true});
+       else await game.syncRules(p);
+       return json(res,200,packet(id));
+     }
+     if(route==='POST /api/rules/seen'){
+       if(c.rulesFeed)c.rulesFeed.seenVersion=c.rulesFeed.version;await store.save();return json(res,200,{ok:true});
+     }
+     if(route==='POST /api/rules/review'){
+       if(c.agentStatus==='working'||c.rulesReview?.status==='working')throw new Error('Wait for the current response first.');
+       if(!c.rulesFeed?.pages?.length||c.rulesFeed.pending||c.rulesFeed.error)throw new Error('Sync the engine rules successfully before reviewing.');
+       const catalogue=promptCatalogue(store.data,p,c),master=store.data.masterPrompt;
+       const revisions=Object.fromEntries(['master',...catalogue.map(x=>x.key)].map(key=>[key,promptRevision(store.data,key)]));
+       const job=c.rulesReview={id:randomUUID(),status:'working',version:c.rulesFeed.version,created:new Date().toISOString(),proposals:[]};
+       c.agentStatus='working';c.stopRequested=false;await store.save();
+       (async()=>{try{
+         const evidence=JSON.stringify({engineRules:rulesContext(c),characterHasSheet:Boolean(c.state?.you?.state?.sheet),masterPrompt:master,prompts:catalogue.map(({key,instructions,task,context})=>({key,instructions,task,context}))});
+         const answer=demo?{reply:'Demo review: the fictional rules do not require prompt changes.',proposals:[]}:await agent.reply(p,promptFor(store.data,'rules-review').task,'rules-review',undefined,undefined,evidence,reviewSchema);
+         if(c.stopRequested)throw new Error('Rules review stopped. No prompts changed.');
+         job.reply=answer.reply;job.proposals=(answer.proposals||[]).slice(0,12).filter(x=>revisions[x.key]).map(x=>({...x,id:randomUUID(),revision:revisions[x.key],before:x.key==='master'?master:catalogue.find(item=>item.key===x.key),status:'pending'}));job.status='complete';
+       }catch(error){job.status='error';job.error=error.message;}finally{c.agentStatus='idle';c.activeThread=null;await store.save();}})().catch(()=>{});
+       return json(res,202,{ok:true});
+     }
+     if(route==='POST /api/rules/proposal'){
+       const proposal=c.rulesReview?.proposals?.find(x=>x.id===b.id);
+       if(!proposal||proposal.status!=='pending')throw new Error('This proposal is no longer pending.');
+       if(b.dismiss)proposal.status='dismissed';
+       else{
+         if(c.rulesReview.version!==c.rulesFeed?.version)throw new Error('Rules changed since this review. Run a new review.');
+         savePrompt(store.data,proposal.key,proposal.key==='master'?proposal.instructions:{instructions:proposal.instructions,task:proposal.task,context:proposal.before.context},proposal.revision);
+         proposal.status='applied';for(const character of Object.values(store.data.characters))for(const prose of Object.values(character.sceneProse||{}))prose.key=null;
+       }
+       await store.save();return json(res,200,{ok:true});
      }
      if(route==='POST /api/records'){
        if(!['quest','memory','note'].includes(b.kind))throw new Error('Choose a journal entry type.');

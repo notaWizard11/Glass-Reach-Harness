@@ -465,3 +465,13 @@
 .presence-controls{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.65rem 0;border-bottom:1px solid var(--line);margin-bottom:.6rem}
 .presence-controls>span:first-child{font-weight:600}
 .presence-controls>.caption{flex-basis:100%;margin:0}
+.prompt-list-panel{padding:1rem;margin-bottom:1rem}
+.prompt-card{padding:.8rem;border-bottom:1px solid var(--line)}
+.prompt-card>summary{font-weight:600;cursor:pointer;padding:.4rem 0}
+.prompt-card>label{display:block;margin:.8rem 0}
+.prompt-preview{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 'Segoe UI',sans-serif;max-height:32rem;overflow:auto;background:var(--panel2);padding:1rem;border:1px solid var(--line)}
+.prompt-context{display:flex;gap:1rem;flex-wrap:wrap;margin:1rem 0}
+.prompt-context label{display:flex;align-items:center;gap:.4rem}
+.prompt-context input[type=number]{width:5rem}
+.prompt-proposal{background:var(--panel);border:1px solid var(--line);padding:1rem;margin:1rem 0}
+#page-rules>details{padding:.7rem;border-bottom:1px solid var(--line)}

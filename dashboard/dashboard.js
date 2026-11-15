@@ -1,3 +1,4 @@
+import {mountRules} from './rules-ui.js';
 import {mountAutopilot} from './autopilot-ui.js';
 import {knownPeople,relationshipGroups} from './people.mjs';
 import {storyRows,groupStoryRows} from './timeline.mjs';
@@ -241,6 +242,7 @@ function placeWatchControls(){
   $('watch-controls').hidden=!onPage&&composeMode!=='watch';
   $('open-watch-page').hidden=onPage;
 }
+const rulesUI=mountRules({api,getData:()=>data,getProfile:()=>profile,reload:load,onError:error=>toast(error.message)});
 for(const b of document.querySelectorAll('[data-page]'))b.addEventListener('click',()=>setPage(b.dataset.page));
 for(const b of document.querySelectorAll('[data-goto]'))b.addEventListener('click',()=>setPage(b.dataset.goto));
 function openDialog(title){$('dialog-title').textContent=title;$('dialog-content').replaceChildren();if(!$('drawer').open)$('drawer').showModal();return $('dialog-content');}
@@ -294,7 +296,7 @@ function render(){if(!data)return;const s=state(),p=person();$('auto').checked=d
  change('nearby',s.present,()=>{const people=(s.present||[]).filter(x=>['person','agent','fighter','hireling','drifter'].includes(x.type)||x.state?.hp!=null);$('nearby-count').textContent=people.length;$('nearby').replaceChildren(...people.map(x=>entityRow(x)));$('features').replaceChildren(...(s.present||[]).filter(x=>!people.includes(x)).map(x=>entityRow(x)));if(!people.length)empty($('nearby'),'No characters recorded nearby.');});
  change('inventory',[s.holding,data.organization],renderInventory);
  change('journal',[s.knows,data.people,s.present,s.relations,s.goals,p.memory,data.journalMemories,data.notes,data.documents,s.places,s.holding],renderJournal);
- renderEvents();storyboard.update();renderActions();renderQuests();renderReadied();autopilotUI.update();
+ renderEvents();storyboard.update();renderActions();renderQuests();renderReadied();autopilotUI.update();rulesUI.update();
  change('maps',data.maps,()=>{$('map-list').replaceChildren(...[...(data.maps||[])].reverse().map(m=>{const b=button(m.title,()=>{mapId=m.id;renderAtlas();},'map-entry');b.append(el('small',new Date(m.created).toLocaleString()));return b;}));if(page==='atlas')renderAtlas();});
  change('watches',data.watchers,()=>{$('watches').replaceChildren(...(data.watchers||[]).map(w=>{const row=el('div',w.kind+' '+w.value+' · '+w.status,'note');if(w.error)row.append(el('small',w.error));row.append(button('Remove',async()=>{await api('watch',{stop:w.id});await load();},'quiet'));return row;}));});
  $('agent-status').textContent=data.agentStatus==='working'?'Thinking…':data.agentStatus==='error'?'Check reply':'Ready';$('stop-agent').hidden=data.agentStatus!=='working';$('watch-stop-agent').hidden=data.agentStatus!=='working';$('control-mode').value=data.profile.mode||'manual';

@@ -1,3 +1,4 @@
+import {syncRules} from './rules-feed.mjs';
 import {captureDocuments} from './journal.mjs';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -6,7 +7,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ingest } from './store.mjs';
-export const readOps=new Set(['inspect','recall','seats','timers','find','programs','clock','summary']);
+export const readOps=new Set(['inspect','recall','seats','timers','find','programs','clock','summary','guide']);
 export const writeOps=new Set(['act','say','remember','intend','join','away','reclaim']);
 export function validateOperation(op,args={}) {
   if(!writeOps.has(op)) throw new Error('Unsupported game action.');
@@ -43,6 +44,7 @@ export class Game {
   async read(p,op,args={}){if(!readOps.has(op))throw new Error('Unsupported inspection.');if('principal'in args||'from_entity'in args||'entity'in args&&op!=='inspect')throw new Error('This inspection must use the selected character.');return this.serial(p,async()=>{if(!this.demo&&!['seats','summary'].includes(op))await this.assertCharacter(p);const result=this.demo?this.demoRead(p,op,args):await this.transport(p,op,args);if(op==='inspect'){captureDocuments(this.store.character(p.id),[result,result.entity,...(Array.isArray(result.contents)?result.contents:[])]);await this.store.save();}return result;});}
   async assertCharacter(p){const r=await this.transport(p,'perceive',{events:0});if(r.you?.id!==p.entityId)throw new Error('This game connection is controlling a different character or has expired. Use Reconnect for the selected profile.');return r;}
   async refresh(p){return this.serial(p,()=>this.refreshUnlocked(p));}
+  async syncRules(p){return this.serial(p,()=>syncRules(this.store.character(p.id),(op,args)=>this.transport(p,op,args),()=>this.store.save(),{force:true}));}
   async refreshUnlocked(p){
     const c=this.store.character(p.id);
     if(this.demo){if(!c.state)ingest(c,await this.demoState(p));c.state.connection='Demo';return c.state;}
@@ -56,7 +58,7 @@ export class Game {
         const batch=await this.transport(p,'history',{since:cursor,limit:500});if(!Array.isArray(batch))throw new Error(batch.reason||'History unavailable.');
         events.push(...batch);if(!batch.length){pending=false;break;}const next=Math.max(...batch.map(e=>e.seq));if(next<=cursor)throw new Error('Game history pagination did not advance.');cursor=next;if(batch.length<500){pending=false;break;}
       }
-      ingest(c,r,events);c.historyCoverage={checkedAt:new Date().toISOString(),pending};await this.store.save();return c.state;
+      ingest(c,r,events);c.historyCoverage={checkedAt:new Date().toISOString(),pending};await syncRules(c,(op,args)=>this.transport(p,op,args),()=>this.store.save());await this.store.save();return c.state;
     }catch(e){c.historyCoverage={...c.historyCoverage,error:e.message};if(c.state){c.state.connection='Saved observation';c.state.problem=e.message;await this.store.save();return c.state;}throw e;}
   }
   async execute(p,op,args,guard){validateOperation(op,args);return this.serial(p,async()=>{

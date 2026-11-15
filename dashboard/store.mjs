@@ -17,6 +17,7 @@ export class Store {
     for (const c of Object.values(this.data.characters)) {
       if(c.autopilot?.enabled){c.autopilot.enabled=false;c.autopilot.status='paused';c.autopilot.reason='Server restarted. Review the record and explicitly start autopilot again.';}
       c.autopilotThread=null;
+      if(c.rulesReview?.status==='working'){c.rulesReview.status='error';c.rulesReview.error='Review interrupted by restart. Run review again; no proposals were applied.';}
       for(const bookmark of c.awayBookmarks||[])if(bookmark.status==='summarizing'){bookmark.status='queued';delete bookmark.error;}
       if(c.storyProseJob?.status==='working'){c.storyProseJob.status='error';c.storyProseJob.error='Scene writing was interrupted; it will resume automatically.';}
       if(c.recapJob?.status==='working'){c.recapJob.status='error';c.recapJob.error='The server restarted. Request the recap again to resume from cached sections.';}

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added an automatically synced engine rules feed with separate read markers and rules context in every Codex request.
+- Added editable per-query master prompts, context controls, effective-instruction previews and prompt history in Settings.
+- Added Codex rules reviews with individually applied/dismissed prompt proposals and stale-change checks.
+
 - Added persistent Away/Active bookmarks and automatic return briefings bounded by departure and return. Catch-up now emphasizes concise high points; queued work and retry preserve the original interval.
 
 - Added opt-in, per-character autopilot with its own model, motivations and goals, five action permissions, allowed locations, duration/action/decision limits, and an activity log. Permissions are rechecked before dispatch; manual control, uncertain delivery and restarts pause execution.

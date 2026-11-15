@@ -102,7 +102,7 @@ export function coverageText(character){
 }
 
 // Bounded, cached passes cover every selected event without silently trimming a long absence.
-export async function summarizeHistory({character,events,ask,progress=()=>{},cancelled=()=>false,save=async()=>{},question='Recap what happened chronologically, changes for the character, arrivals and departures, and unresolved matters.'}){
+export async function summarizeHistory({character,events,ask,cacheVersion='',progress=()=>{},cancelled=()=>false,save=async()=>{},question='Recap what happened chronologically, changes for the character, arrivals and departures, and unresolved matters.'}){
   const names=historicalNames(character);
   let chunks=[],chunk=[],size=0;
   for(const event of events){
@@ -120,7 +120,7 @@ export async function summarizeHistory({character,events,ask,progress=()=>{},can
       if(cancelled())throw new Error('Recap stopped. Saved records remain available.');
       progress('Reading history · pass '+(pass+1)+' · '+(index+1)+' of '+chunks.length);
       const evidence=chunks[index];
-      const key=createHash('sha256').update('story-v1\n'+question+'\n'+evidence).digest('hex');
+      const key=createHash('sha256').update('story-v1\n'+cacheVersion+'\n'+question+'\n'+evidence).digest('hex');
       let summary=character.storyCache[key];
       if(!summary){
         summary=await ask(question,evidence);

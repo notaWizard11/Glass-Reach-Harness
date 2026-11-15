@@ -366,3 +366,24 @@
 .theme-panel label{max-width:360px;margin:0}
 :root[data-theme] input[type=checkbox],
 :root[data-theme] input[type=range]{accent-color:var(--mint)}
+
+.story-controls{padding:14px 17px;border-bottom:1px solid var(--line)}
+.story-controls p{margin:8px 0;font-size:12px}
+.story-controls .caption{padding:0}
+#storyboard-view{padding-bottom:14px}
+#story-scenes{padding:0 17px;max-height:72vh;overflow:auto;scrollbar-color:var(--subtle-border) transparent}
+.scene-card{border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:6px;margin:14px 0;padding:16px;background:var(--panel2)}
+.scene-card-heading{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.scene-card-heading small{color:var(--muted)}
+.scene-card .caption{padding:0}
+.scene-narrative{font:16px/1.7 Georgia,serif;white-space:pre-wrap;overflow-wrap:anywhere}
+.scene-activity{padding:10px;background:var(--movement-bg);color:var(--text);font-size:12px;border-left:2px solid var(--movement-accent)}
+.scene-record{border-top:1px solid var(--line);padding:10px 0}
+.scene-record small{color:var(--muted)}
+.scene-record p{white-space:pre-wrap;overflow-wrap:anywhere}
+.scene-card details>p{white-space:pre-wrap;overflow-wrap:anywhere}
+.scene-card summary,.recap-card summary{padding:12px 0;font:14px 'Segoe UI',sans-serif}
+.recap-card{padding:0 17px 12px;border-bottom:1px solid var(--line);background:var(--result-bg)}
+.recap-card .caption{padding:0}
+.source-link{display:inline;padding:0 3px;font:11px 'Segoe UI',sans-serif}
+#story-older{margin-left:17px}

@@ -10,16 +10,18 @@ import { Game, validateOperation } from './game.mjs';
 import { Agent } from './agent.mjs';
 import { prepareReadied, runReadied } from './readied.mjs';
 import { generateSceneImage } from './scene-images.mjs';
+import { storyPage, buildScenes, summarizeHistory, coverageText, describeEvent, historicalNames } from './story.mjs';
 export async function startServer({demo=false,port=demo?47382:47381,dataDir,liveIntervalMs=5000,imageGenerator=generateSceneImage}={}) {
  const store=await new Store(dataDir||fileURLToPath(new URL('../.glassreach-data/'+(demo?'demo':'live'),import.meta.url)),demo).init();
  const game=new Game(store,demo),agent=new Agent(store);await game.importLegacy();
  const csrf=randomBytes(24).toString('hex'),watchers=new Map(),liveProfiles=new Map();
  const savingReadied=new WeakSet();
+ const storyJobs=new Set();
  const sceneRequests=new Set(),sceneDir=join(store.dir,'scenes');
  let nextLiveAt=Date.now()+liveIntervalMs,liveChecking=null;
  const mobile=process.env.GLASS_REACH_MOBILE_ORIGIN?new URL(process.env.GLASS_REACH_MOBILE_ORIGIN):null,login=process.env.GLASS_REACH_MOBILE_LOGIN;
  if(mobile&&(mobile.protocol!=='https:'||!mobile.hostname.endsWith('.ts.net')||mobile.pathname!=='/'||!login))throw new Error('Private phone access requires an exact Tailscale HTTPS origin and login.');
- const assets={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
+ const assets={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/storyboard.js':['storyboard.js','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
  async function body(req){let s='';for await(const chunk of req){s+=chunk;if(s.length>300000)throw new Error('Request is too large.');}return s?JSON.parse(s):{};}
  const json=(res,status,data)=>res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'}).end(JSON.stringify(data));
  const packet=id=>({...store.publicData(id),csrf,
@@ -45,6 +47,45 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      c.agentStatus='idle';
    }catch(e){c.agentStatus='error';c.messages.push({id:randomUUID(),role:'error',text:e.message,time:new Date().toISOString()});}finally{c.activeThread=null;c.agentPreview='';await store.save();}})().catch(()=>{c.agentStatus='error';c.messages.push({id:randomUUID(),role:'error',text:'The local record could not be saved. Check folder access before continuing.',time:new Date().toISOString()});});
  }
+ async function startRecap(p,options={}){
+   const c=store.character(p.id);
+   if(c.agentStatus==='working'||storyJobs.has(p.id))throw new Error('Wait for the current response or stop it first.');
+   const snapshot=c.events.slice();
+   let events=snapshot;
+   if(options.scene){
+     const scene=buildScenes(c).find(item=>item.id===String(options.scene));
+     if(!scene)throw new Error('This scene is no longer available. Refresh the storyboard.');
+     events=scene.events;
+   }else if(options.range==='unread'||!options.range){
+     events=events.filter(event=>event.seq>(c.lastReadSeq||0));
+   }else if(options.range==='day'){
+     const latest=snapshot.at(-1)?.t||0;
+     events=events.filter(event=>event.t>=latest-86400);
+   }else if(options.range!=='all')throw new Error('Choose a recap period.');
+   if(c.historyCoverage?.pending)throw new Error('History is still catching up. Try again after the next sync.');
+   const job={id:randomUUID(),status:'working',scene:options.scene||null,start:events[0]?.seq||0,
+     end:events.at(-1)?.seq||0,range:options.range||'unread',count:events.length,coverage:coverageText(c),created:new Date().toISOString()};
+   c.recapJob=job;c.stopRequested=false;c.agentStatus='working';storyJobs.add(p.id);
+   try{await store.save();}catch(error){storyJobs.delete(p.id);c.agentStatus='idle';job.status='error';job.error=error.message;throw error;}
+   (async()=>{
+     try{
+       const text=await summarizeHistory({
+         character:c,events,cancelled:()=>c.stopRequested,save:()=>store.save(),
+         question:options.question||'Tell the story of this interval in chronological order. Include changes for my character, who arrived or left, important dialogue and unresolved matters. Cite every factual paragraph.',
+         progress:message=>{job.progress=message;c.agentPreview=message;},
+         ask:async(question,evidence)=>demo?evidence.split('\n').slice(0,8).map(line=>line.split(' {')[0]).join('\n\n'):
+           (await agent.reply(p,question,'recap',undefined,undefined,evidence)).reply,
+       });
+       if(c.stopRequested)throw new Error('Recap stopped.');
+       Object.assign(job,{status:'complete',text});
+       (c.recaps??=[]).push({...job});
+       if(job.scene)(c.sceneNarratives??={})[job.scene]={end:job.end,text};
+       c.agentStatus='idle';
+     }catch(error){job.status='error';job.error=error.message;c.agentStatus='idle';}
+     finally{storyJobs.delete(p.id);c.agentPreview='';c.activeThread=null;await store.save();}
+   })().catch(()=>{job.status='error';job.error='The local recap could not be saved.';});
+   return job;
+ }
  async function execute(p,op,args,requestId,guard){
    validateOperation(op,args);const c=store.character(p.id);
    if(op==='join'&&args.entity!==undefined&&args.entity!==p.entityId)throw new Error('Reconnect only the character assigned to this profile.');
@@ -69,9 +110,28 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      const b=req.method==='GET'?{}:await body(req),id=url.searchParams.get('profile')||b.profile||store.data.profiles[0].id,p=store.profile(id),c=store.character(id),route=req.method+' '+url.pathname;
      if(route==='GET /api/session'){liveProfiles.set(p.credential,id);if(demo&&!c.state)await game.refresh(p);return json(res,200,packet(id));}
      if(route==='POST /api/refresh'){await game.refresh(p);return json(res,200,packet(id));}
+     if(route==='GET /api/story'){
+       return json(res,200,{...storyPage(c,{
+         before:Number(url.searchParams.get('before'))||Infinity,query:(url.searchParams.get('q')||'').slice(0,300),
+       }),names:historicalNames(c),coverage:coverageText(c),lastReadSeq:c.lastReadSeq||0,
+         unread:c.events.filter(event=>event.seq>(c.lastReadSeq||0)).length,latestSeq:c.events.at(-1)?.seq||0});
+     }
+     if(route==='GET /api/event'){
+       const event=c.events.find(event=>event.seq===Number(url.searchParams.get('seq')));
+       if(!event)return json(res,404,{error:'Event unavailable in the saved ledger.'});
+       return json(res,200,{event,text:describeEvent(event,historicalNames(c))});
+     }
+     if(route==='POST /api/story/read'){
+       if(c.historyCoverage?.pending)throw new Error('Wait for history to finish catching up before marking it read.');
+       const seq=Number(b.through);
+       if(!Number.isSafeInteger(seq)||seq<0||seq>(c.events.at(-1)?.seq||0))throw new Error('Choose a recorded position.');
+       c.lastReadSeq=Math.max(c.lastReadSeq||0,seq);await store.save();
+       return json(res,200,{lastReadSeq:c.lastReadSeq});
+     }
+     if(route==='POST /api/story/recap')return json(res,202,await startRecap(p,b));
      if(route==='POST /api/inspect')return json(res,200,await game.read(p,b.op,b.args||{}));
      if(route==='POST /api/action')return json(res,200,await execute(p,b.op,b.args,b.requestId));
-     if(route==='POST /api/agent'){if(!b.text?.trim())throw new Error('Enter a request.');if(b.mode!=null&&!['chat','game'].includes(b.mode))throw new Error('Choose Talk to Codex or Act in game.');await runAgent(p,b.text,b.mode==='game'?'game':['atlas','suggestions'].includes(b.purpose)?b.purpose:'chat');return json(res,202,{ok:true});}
+     if(route==='POST /api/agent'){if(!b.text?.trim())throw new Error('Enter a request.');if(b.mode!=null&&!['chat','game'].includes(b.mode))throw new Error('Choose Talk to Codex or Act in game.');if(b.mode!=='game'&&/catch me up|what (?:did i miss|changed)|summari[sz]e.*(?:missed|recent|events)/i.test(b.text)){return json(res,202,await startRecap(p,{range:'unread',question:b.text}));}await runAgent(p,b.text,b.mode==='game'?'game':['atlas','suggestions'].includes(b.purpose)?b.purpose:'chat');return json(res,202,{ok:true});}
      if(route==='POST /api/agent/connect')return json(res,200,demo?{connected:true,demo:true,models:[]}:await agent.start());
      if(route==='POST /api/agent/stop'){c.stopRequested=true;await agent.stopThread(c.activeThread);return json(res,200,{ok:true});}
      if(route==='POST /api/agent/reset'){if(c.agentStatus==='working')throw new Error('Stop the current reply first.');c.sessions??=[];c.sessions.push({time:new Date().toISOString(),messages:c.messages});c.messages=[];c.threadId=null;await store.save();return json(res,200,packet(id));}

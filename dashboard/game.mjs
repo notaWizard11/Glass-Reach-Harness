@@ -49,14 +49,14 @@ export class Game {
       let r=await this.transport(p,'perceive',{cursor:c.state?.cursor||0,events:100,layout:true});
       if(r.ok===false&&/layout|argument|parameter/i.test(r.reason||''))r=await this.transport(p,'perceive',{cursor:c.state?.cursor||0,events:100});
       if(r.you?.id!==p.entityId)throw new Error('Character session expired or another character is active. Reconnect the selected character.');
-      let cursor=c.historyCursor||0;const events=[];
+      let cursor=c.historyCursor||0;const events=[];let pending=true;
       // Bound each refresh. The next refresh continues without dropping a page.
       for(let page=0;page<8;page++){
         const batch=await this.transport(p,'history',{since:cursor,limit:500});if(!Array.isArray(batch))throw new Error(batch.reason||'History unavailable.');
-        events.push(...batch);if(!batch.length)break;const next=Math.max(...batch.map(e=>e.seq));if(next<=cursor)break;cursor=next;if(batch.length<500)break;
+        events.push(...batch);if(!batch.length){pending=false;break;}const next=Math.max(...batch.map(e=>e.seq));if(next<=cursor)throw new Error('Game history pagination did not advance.');cursor=next;if(batch.length<500){pending=false;break;}
       }
-      ingest(c,r,events);await this.store.save();return c.state;
-    }catch(e){if(c.state){c.state.connection='Saved observation';c.state.problem=e.message;await this.store.save();return c.state;}throw e;}
+      ingest(c,r,events);c.historyCoverage={checkedAt:new Date().toISOString(),pending};await this.store.save();return c.state;
+    }catch(e){c.historyCoverage={...c.historyCoverage,error:e.message};if(c.state){c.state.connection='Saved observation';c.state.problem=e.message;await this.store.save();return c.state;}throw e;}
   }
   async execute(p,op,args,guard){validateOperation(op,args);return this.serial(p,async()=>{
     if(guard){

@@ -1,4 +1,5 @@
 import {storyRows} from './timeline.mjs';
+import {mountStoryboard} from './storyboard.js';
 'use strict';
 const $=id=>document.getElementById(id),el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
 const themeSelect=$('theme-select');
@@ -227,7 +228,7 @@ async function api(path,body,selected=profile){const r=await fetch('/api/'+path+
 function change(key,value,fn){const next=JSON.stringify(value);if(fingerprints.get(key)===next)return;fingerprints.set(key,next);fn();}
 function state(){return data?.state||{};}
 function person(){return state().you?.state||{};}
-function name(id){if(!id)return 'The scene';const s=state();return [s.you,s.here,...(s.present||[]),...(s.holding||[]),...(s.places||[]),...(s.knows||[]).map(x=>({id:x.who,...x}))].find(x=>x?.id===id)?.name||'Someone / something unrecorded';}
+function name(id){if(!id)return 'The scene';if(data?.names?.[id])return data.names[id];const s=state();return [s.you,s.here,...(s.present||[]),...(s.holding||[]),...(s.places||[]),...(s.knows||[]).map(x=>({id:x.who,...x}))].find(x=>x?.id===id)?.name||'Someone / something unrecorded';}
 function entities(){const s=state();return [s.you,s.here,...(s.holding||[]),...(s.present||[]),...(s.places||[])].filter(Boolean);}
 function empty(target,text){target.replaceChildren(el('p',text,'empty'));}
 function setPage(next){if(!$('page-'+next))next='play';page=next;localStorage.setItem('gr-page',next);for(const n of document.querySelectorAll('.page'))n.hidden=n.id!=='page-'+next;for(const b of document.querySelectorAll('[data-page]')){b.classList.toggle('selected',b.dataset.page===next);b.setAttribute('aria-current',b.dataset.page===next?'page':'false');}placeWatchControls();if(next==='atlas')renderAtlas();if(next==='settings'&&data&&!modelsLoaded)connectModels();}
@@ -256,7 +257,7 @@ function render(){if(!data)return;const s=state(),p=person();$('auto').checked=d
  change('nearby',s.present,()=>{const people=(s.present||[]).filter(x=>['person','agent','fighter','hireling','drifter'].includes(x.type)||x.state?.hp!=null);$('nearby-count').textContent=people.length;$('nearby').replaceChildren(...people.map(x=>entityRow(x)));$('features').replaceChildren(...(s.present||[]).filter(x=>!people.includes(x)).map(x=>entityRow(x)));if(!people.length)empty($('nearby'),'No characters recorded nearby.');});
  change('inventory',[s.holding,data.organization],renderInventory);
  change('journal',[s.knows,s.goals,p.memory,data.notes,s.places,s.holding],renderJournal);
- renderEvents();renderActions();renderSuggestions();renderReadied();
+ renderEvents();storyboard.update();renderActions();renderSuggestions();renderReadied();
  change('maps',data.maps,()=>{$('map-list').replaceChildren(...[...(data.maps||[])].reverse().map(m=>{const b=button(m.title,()=>{mapId=m.id;renderAtlas();},'map-entry');b.append(el('small',new Date(m.created).toLocaleString()));return b;}));if(page==='atlas')renderAtlas();});
  change('watches',data.watchers,()=>{$('watches').replaceChildren(...(data.watchers||[]).map(w=>{const row=el('div',w.kind+' '+w.value+' · '+w.status,'note');if(w.error)row.append(el('small',w.error));row.append(button('Remove',async()=>{await api('watch',{stop:w.id});await load();},'quiet'));return row;}));});
  $('agent-status').textContent=data.agentStatus==='working'?'Thinking…':data.agentStatus==='error'?'Check reply':'Ready';$('stop-agent').hidden=data.agentStatus!=='working';$('watch-stop-agent').hidden=data.agentStatus!=='working';$('control-mode').value=data.profile.mode||'manual';
@@ -464,6 +465,11 @@ $('watch-start').onclick=async()=>{try{await api('watch',{kind:$('watch-kind').v
 $('public-timers').onclick=async()=>{try{const r=await api('inspect',{op:'timers'});const root=openDialog('Public schedule');for(const t of Array.isArray(r)?r:[])paragraph(root,(t.name||t.kind||'Event')+' · '+Math.round((t.in??t.remaining??t.seconds??0)/60)+' game minutes');root.append(details(r,'Schedule details'));}catch(e){toast(e.message);}};
 $('manage').onclick=()=>{const root=openDialog('Add a character profile');paragraph(root,'Keep each character’s memories, conversation and suggestions separate. Reusing a game connection switches its single active seat when you reconnect.');const n=field(root,'Profile name'),id=field(root,'Existing character ID (leave empty to create from a template)'),token=field(root,'Separate game token (optional; encrypted on this PC)','password');root.append(button('Save profile',async()=>{const r=await api('profiles',{name:n.value,entityId:id.value,token:token.value});token.value='';profile=r.id;localStorage.setItem('gr-profile',profile);fingerprints.clear();settingsDirty=false;await load();$('draft').value='';$('drawer').close();setPage('settings');toast('Profile saved. Reconnect its seat or choose a template.');},'primary'));};
 $('seats').onclick=async()=>{try{const r=await api('inspect',{op:'seats'});if(r.ok===false)throw new Error(r.reason);const root=$('seat-results');root.replaceChildren();for(const t of r.templates||[])root.append(button('Create '+t.template,()=>{const box=openDialog('Create a '+t.template);paragraph(box,t.doc||'Create a new character under this profile. This changes the active seat on its game connection.');const n=field(box,'Character name','text',data.profile.name),description=field(box,'Appearance (set when created)','textarea');box.append(button('Create character in game',()=>perform('join',{template:t.template,name:n.value,description:description.value}),'primary'));}));for(const seat of r.seats||[])root.append(el('p',(seat.name||seat.entity)+' · '+(seat.held||seat.embodied_by?'Occupied':'Seat listed')));root.append(details(r,'Seat availability details'));}catch(e){toast(e.message);}};
+const storyboard=mountStoryboard({
+ api,getData:()=>data,getProfile:()=>profile,onError:error=>toast(error.message),
+ openDetails:(text,event)=>{const root=openDialog('Recorded event #'+event.seq);paragraph(root,text);root.append(details(event,'Original record'));}
+});
+$('quick-catch-up').onclick=()=>storyboard.catchUp();
 async function start(){setPage(page);try{await load();if(page==='settings')connectModels();}catch(e){try{data=JSON.parse(localStorage.getItem('gr-saved-'+profile));if(data){offline=true;render();}else toast(e.message);}catch{toast(e.message);}}$('draft').value=localStorage.getItem('gr-draft-'+profile)??data?.draft??'';if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});}
 $('auto').onchange=async()=>{renderLiveActivity();try{await api('settings',{liveFeed:$('auto').checked});await load();}catch(e){toast(e.message);load().catch(()=>{offline=true;renderConnection();});}};
 let loadingFeed=false;

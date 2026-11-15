@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Storyboard scene cards with expandable original events, activity strips, and a separate detailed log.
+- Full-archive search and cached, source-linked catch-up recaps; explicit per-character read markers and history coverage notices.
+- Agent questions can retrieve older saved events; historical entity names persist across observations.
 - Streamlined Play with one typed story log for game events, player messages, inner thoughts and narrated outcomes.
 - Atlas-only map, Journal-only intentions and collapsible Play stats/inventory.
 - Watch & automation composer tab; private inner-monologue and DM narration styles.

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added a section-by-section user guide in `Documention/Guide`, with an overview and a page for each of the nine harness tabs, linked from the README and quick-start.
+
 - Renamed the app, repository metadata, launchers and release package to Glass Reach Harness. Previous launcher names remain compatibility shortcuts.
 - Audited setup and operational documentation: added a dedicated quick-start, corrected Codex discovery and background-operation guidance, replaced obsolete approvals instructions, documented current character-sheet limits, and refreshed development/private-phone notes.
 

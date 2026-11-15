@@ -2,7 +2,7 @@
 
 A player-controlled agent harness for **The Glass Reach**, built around Codex. It connects your character's goals, game rules, memories and actions through a persistent play interface.
 
-**[Quick start: download, connect and play](QUICKSTART.md)** · [Changelog](CHANGELOG.md) · [Development notes](dashboard/README.md)
+**[Quick start: download, connect and play](QUICKSTART.md)** · **[Section-by-section user guide](Documention/Guide/README.md)** · [Changelog](CHANGELOG.md) · [Development notes](dashboard/README.md)
 
 Early preview software. Live play currently requires Windows; fictional demo mode needs Node.js 22 or newer. No project dependency installation or build step is required.
 

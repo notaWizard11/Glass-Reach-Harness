@@ -50,4 +50,4 @@ Next time, launch from the same folder. Your records and encrypted token are sav
 - **Wrong character / not in this world:** select the intended profile and use **Reconnect selected character**.
 - **Port already in use:** the launcher reuses an existing harness. If another program owns port 47381, close that program or choose another `PORT` before launching; do not start a second server against the same records.
 
-See the [README](README.md) for background-operation limits, model usage, backups and updates.
+Next, explore the [section-by-section user guide](Documention/Guide/README.md) for help using every harness tab. See the [README](README.md) for background-operation limits, model usage, backups and updates.

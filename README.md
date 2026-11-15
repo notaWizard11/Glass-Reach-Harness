@@ -6,16 +6,22 @@ A player-controlled agent harness for **The Glass Reach**, built around Codex. I
 
 Early preview software. Live play currently requires Windows; fictional demo mode needs Node.js 22 or newer. No project dependency installation or build step is required.
 
+## Latest updates
+
+The latest build adds a live expanding atlas, searchable locations, visible-character markers, label controls, and shared configurable triggers for watches and readied actions. Autopilot now lives in Automation.
+
+**[Read the full changelog →](CHANGELOG.md)** — the same notes are available inside **Rules & updates → Harness updates**. Entries marked Unreleased describe development changes, not a published release.
+
 ## What the harness does
 
 - Keeps a searchable game record, a scene-based storyboard and concise catch-up briefings. Explicit Away/Active bookmarks define an absence even while the game stays live.
 - Separates private **Inner thoughts** from **Act in game**. Game requests execute one step at a time using fresh observations and confirmed results.
-- Provides Atlas connections and schematic diagrams, character stats and inventory, people and relationships, quests, and a journal of notes, memories and observed documents.
+- Provides a persistent coordinate-based Atlas, optional schematic diagrams, character stats and inventory, people and relationships, quests, and a journal of notes, memories and observed documents.
 - Supports notification watches, exact pre-approved readied actions and opt-in autopilot with goals, permissions and limits.
 - Fetches the engine's rules changelog and supplies it to Codex. Rules reviews propose prompt changes for you to apply or dismiss.
 - Exposes nine editable Codex query prompts in **Settings → Master Prompts List**, with context controls, saved versions and combined-instruction previews. Models can be selected per purpose.
 
-The harness does not grant your character abilities or knowledge that the game has not provided. Atlas diagrams are schematic. Inventory Ready/backpack grouping is local organization, not an engine equipment-slot system. The current Character screen renders legacy Body/Wits/Will, skills and progression; the engine's newer sheet system is not yet a dedicated twelve-attribute UI. Rules context does distinguish whether the selected character has a sheet.
+The harness does not grant your character abilities or knowledge that the game has not provided. The live atlas uses observed engine geometry; optional diagrams remain schematic. Unpositioned places are not assigned invented coordinates. Inventory Ready/backpack grouping is local organization, not an engine equipment-slot system. The current Character screen renders legacy Body/Wits/Will, skills and progression; the engine's newer sheet system is not yet a dedicated twelve-attribute UI. Rules context does distinguish whether the selected character has a sheet.
 
 ## Requests, context and permissions
 
@@ -23,7 +29,7 @@ The harness does not grant your character abilities or knowledge that the game h
 
 Each Codex request uses a fresh temporary session populated by the harness. The shared Master prompt, character preferences, query-specific instructions and applicable engine rules are supplied again. Direct requests normally include the current observation, 60 recent events, 16 recent messages, relevant history matches and local records; the optional context counts and record groups are configurable. Scene writing, catch-up, quest discovery and rules reviews instead receive selected evidence batches. The harness owns the durable conversation and game history; it does not send messages into an existing desktop chat.
 
-Shell, browser and external MCP execution are disabled in the harness's Codex process. Structured decisions are validated and dispatched by the local server. Editable prompts do not expand execution permissions. Rules reviews use the Inner thoughts model and never apply their proposals automatically. Downloading rules acknowledges them to the engine; **Mark updates seen** is a separate local reading marker.
+Shell, browser and external MCP execution are disabled in the harness's Codex process. Structured decisions are validated and dispatched by the local server. Editable prompts do not expand execution permissions. Rules reviews use the Inner thoughts model and never apply their proposals automatically. Downloading rules acknowledges them to the engine; **Mark engine updates seen** is a separate local reading marker.
 
 ## Background operation and usage
 
@@ -35,7 +41,7 @@ Autopilot checks its goals on the chosen interval, with an independent model, al
 
 Game polling and rules downloads do not use model tokens. Replies, recaps, Auto prose, quest discovery, rules reviews and autopilot decisions do. Auto prose runs for loaded scenes while the browser tab is visible and Storyboard mode is selected. In the current build it can continue when you open another harness section; switch Auto prose off to stop those automatic requests. Evidence references and the detailed log remain available alongside generated text. The harness can only summarize records the game exposed and it saved.
 
-Optional **Atlas → Illustrate a scene** uses the OpenAI Images API. Set `OPENAI_API_KEY` in the server environment and restart to enable it. This is separate API usage and billing from Codex sign-in; no image API key is needed for ordinary play.
+Optional **Atlas → Commission an image** uses the OpenAI Images API. Set `OPENAI_API_KEY` in the server environment and restart to enable it. This is separate API usage and billing from Codex sign-in; no image API key is needed for ordinary play.
 
 ## Local data and updating
 

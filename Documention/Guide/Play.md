@@ -19,7 +19,7 @@ Choose a mode in the bottom composer before sending:
 | --- | --- |
 | **Inner thoughts** | A private discussion of possibilities. It does not send dialogue or actions to the world. |
 | **Act in game** | Authorization to carry out the actions or dialogue in your request. |
-| **Watch & automation** | Opens the same controls available in the [dedicated tab](Watch-and-automation.md). |
+| **Watch & automation** | Opens notification watches and readied actions, with a shortcut to [Automation](Watch-and-automation.md) for autopilot. |
 
 For example, use Inner thoughts for “What do I know about this person?” Use Act in game for “Ask the scout what she saw on the road.” Prompt buttons prepare common requests. **Ctrl + Enter** sends the message.
 

@@ -166,3 +166,19 @@ test('Atlas scene images save and are scoped to their character',async t=>{
  const ledger=JSON.parse(await readFile(join(dir,'ledger.json'),'utf8'));
  assert.deepEqual(ledger.characters.aaron.sceneImages,[scene]);
 });
+
+test('notification watches share thresholds and fire once without a browser feed',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'glass-reach-watches-'));
+ const app=await startServer({demo:true,port:0,dataDir:dir,liveIntervalMs:25});t.after(()=>app.stop());
+ const headers={'X-Glass-Reach-Dashboard':'1'};
+ const session=await (await fetch(app.url+'api/session',{headers})).json();
+ const post=async(path,body)=>fetch(app.url+'api/'+path,{method:'POST',headers:{...headers,'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify(body)});
+ await post('settings',{liveFeed:false});
+ assert.equal((await post('watch',{trigger:{kind:'water',threshold:100,scope:'any'},minutes:5})).status,200);
+ const c=app.store.character(session.profile.id);
+ for(let i=0;i<100&&!c.messages.some(m=>m.text==='Watch triggered: water');i++)await new Promise(r=>setTimeout(r,10));
+ assert.equal(c.messages.filter(m=>m.text==='Watch triggered: water').length,1);
+ await new Promise(r=>setTimeout(r,80));assert.equal(c.messages.filter(m=>m.text==='Watch triggered: water').length,1);
+ assert.equal((await post('watch',{trigger:{kind:'hp',threshold:-1}})).status,400);
+ for(const path of ['trigger-ui.js','triggers.mjs'])assert.equal((await fetch(app.url+path)).status,200);
+});

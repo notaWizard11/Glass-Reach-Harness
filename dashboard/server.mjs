@@ -1,3 +1,5 @@
+import {loadReleaseNotes} from './release-notes.mjs';
+import {normalizeTrigger,primeTrigger,evaluateTrigger} from './triggers.mjs';
 import { runGameTurn } from './game-turn.mjs';
 import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -61,7 +63,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
  let nextLiveAt=Date.now()+liveIntervalMs,liveChecking=null;
  const mobile=process.env.GLASS_REACH_MOBILE_ORIGIN?new URL(process.env.GLASS_REACH_MOBILE_ORIGIN):null,login=process.env.GLASS_REACH_MOBILE_LOGIN;
  if(mobile&&(mobile.protocol!=='https:'||!mobile.hostname.endsWith('.ts.net')||mobile.pathname!=='/'||!login))throw new Error('Private phone access requires an exact Tailscale HTTPS origin and login.');
- const assets={'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/storyboard.js':['storyboard.js','text/javascript'],'/people.mjs':['people.mjs','text/javascript'],'/autopilot-ui.js':['autopilot-ui.js','text/javascript'],'/rules-ui.js':['rules-ui.js','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
+ const assets={'/CHANGELOG.md':['../CHANGELOG.md','text/markdown'],'/atlas-geometry.mjs':['atlas-geometry.mjs','text/javascript'],'/triggers.mjs':['triggers.mjs','text/javascript'],'/trigger-ui.js':['trigger-ui.js','text/javascript'],'/atlas-ui.js':['atlas-ui.js','text/javascript'],'/':['index.html','text/html'],'/style.css':['style.css','text/css'],'/dashboard.js':['dashboard.js','text/javascript'],'/timeline.mjs':['timeline.mjs','text/javascript'],'/storyboard.js':['storyboard.js','text/javascript'],'/people.mjs':['people.mjs','text/javascript'],'/autopilot-ui.js':['autopilot-ui.js','text/javascript'],'/rules-ui.js':['rules-ui.js','text/javascript'],'/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],'/icon.svg':['icon.svg','image/svg+xml'],'/sw.js':['sw.js','text/javascript']};
  async function body(req){let s='';for await(const chunk of req){s+=chunk;if(s.length>300000)throw new Error('Request is too large.');}return s?JSON.parse(s):{};}
  const json=(res,status,data)=>res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'}).end(JSON.stringify(data));
  const packet=id=>({...store.publicData(id),csrf,sceneIndex:buildScenes(store.character(id)).map(({id,title,start,end,startTime,endTime})=>({id,title,start,end,startTime,endTime})),
@@ -175,6 +177,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      if(req.headers['x-glass-reach-dashboard']!=='1')return json(res,403,{error:'Harness header required.'});
      if(req.method!=='GET'&&req.headers['x-csrf-token']!==csrf)return json(res,403,{error:'Reload the harness before submitting.'});
      const b=req.method==='GET'?{}:await body(req),id=url.searchParams.get('profile')||b.profile||store.data.profiles[0].id,p=store.profile(id),c=store.character(id),route=req.method+' '+url.pathname;
+     if(route==='GET /api/harness-updates')return json(res,200,await loadReleaseNotes());
      if(route==='GET /api/session'){liveProfiles.set(p.credential,id);if(demo&&!c.state)await game.refresh(p);return json(res,200,packet(id));}
      if(route==='POST /api/refresh'){await game.refresh(p);return json(res,200,packet(id));}
      if(route==='GET /api/story'){
@@ -369,6 +372,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
          location:state.here.id,locationName:state.here.name,world:state.world,entity:p.entityId,credential:p.credential,
          since:Math.max(state.cursor||0,c.events.at(-1)?.seq||0),expires:now+approved.minutes*60000,
        };
+       primeTrigger(rule,c);
        // Claim the revision synchronously, then persist the approved command before it can fire.
        const index=current?rules.indexOf(current):rules.length;
        savingReadied.add(rule);
@@ -382,12 +386,13 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      }
      if(route==='POST /api/watch'){
        if(b.stop){const w=watchers.get(b.stop);if(w?.profileId===id){clearTimeout(w.timer);watchers.delete(b.stop);}return json(res,200,{ok:true});}
-       if([...watchers.values()].some(w=>w.profileId===id&&w.status==='watching'))throw new Error('Stop the current watch before setting another.');
-       const kind=b.kind,value=String(b.value||'').slice(0,100);if(!['arrival','reply','water','dusk'].includes(kind))throw new Error('Choose a watch condition.');
-       const expression=kind==='arrival'?`came(${JSON.stringify(value)})`:kind==='reply'?`heard('', by=${JSON.stringify(value)})`:kind==='water'?"me['water'] <= 3":"ambient.get('time_of_day') == 'dusk'";
-       const w={id:randomUUID(),profileId:id,kind,value,status:'watching',started:new Date().toISOString(),timer:null};watchers.set(w.id,w);
-       async function poll(){if(!watchers.has(w.id))return;try{const r=demo?{fired:kind==='dusk'}:await game.serial(p,async()=>{await game.assertCharacter(p);return game.transport(p,'wait',{until:expression,timeout:10,since:c.state?.cursor||0});});if(!watchers.has(w.id))return;if(r.ok===false)throw new Error(r.reason);if(r.fired){w.status='fired';c.messages.push({id:randomUUID(),timelineSeq:c.state?.cursor||0,role:'notice',text:'Watch triggered: '+kind+' '+value,time:new Date().toISOString()});await game.refresh(p);await store.save();return;}}catch(e){w.status='error';w.error=e.message;return;}w.timer=setTimeout(poll,3000);}
-       w.timer=setTimeout(poll,100);return json(res,200,{ok:true});
+       if([...watchers.values()].filter(w=>w.profileId===id&&w.status==='watching').length>=12)throw Error('The watch limit is 12.');
+       const trigger=normalizeTrigger(b.trigger||{kind:b.kind,person:b.value});
+       const minutes=Number(b.minutes||30);if(![5,15,30,60,120].includes(minutes))throw Error('Choose a watch duration.');
+       if(trigger.kind==='delay'&&trigger.threshold>=minutes)throw Error('The delay must be shorter than the expiry.');
+       await game.refresh(p);if(!demo&&c.state?.connection!=='Live')throw Error('Reconnect before setting a watch.');
+       const w={id:randomUUID(),profileId:id,trigger,kind:trigger.kind,value:trigger.person||trigger.value||'',status:'watching',entity:p.entityId,credential:p.credential,world:c.state.world,location:c.state.here.id,since:Math.max(c.state.cursor||0,c.events.at(-1)?.seq||0),expires:Date.now()+minutes*60000};
+       primeTrigger(w,c);watchers.set(w.id,w);return json(res,200,{ok:true});
      }
      if(route==='GET /api/history'){const before=Number(url.searchParams.get('before'))||Infinity;return json(res,200,c.events.filter(e=>e.seq<before).slice(-500));}
      if(route==='GET /api/export')return json(res,200,{...packet(id),events:c.events,csrf:undefined,profiles:undefined});
@@ -402,13 +407,21 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
    nextLiveAt=Date.now()+liveIntervalMs;
    if(liveBusy)return;liveBusy=true;
    const active=new Set([...liveProfiles.values(),...store.data.profiles.filter(p=>store.character(p.id).autopilot?.enabled||store.character(p.id).awayBookmarks?.some(b=>['away','queued'].includes(b.status))).map(p=>p.id)]);
+   const watching=[...watchers.values()].filter(w=>w.status==='watching').map(w=>w.profileId);
    const armed=store.data.profiles.filter(p=>store.character(p.id).readied?.some(rule=>rule.status==='armed')).map(p=>p.id);
-   try{for(const id of new Set([...active,...armed])){
+   try{for(const id of new Set([...active,...armed,...watching])){
      const p=store.profile(id),c=store.character(id);
-     if(c.agentStatus!=='working' && (c.autopilot?.enabled || armed.includes(id) || p.liveFeed!==false)){
+     if(c.agentStatus!=='working' && (c.autopilot?.enabled || armed.includes(id) || watching.includes(id) || p.liveFeed!==false)){
        liveChecking=id;
        try{await game.refresh(p);}catch{/* Retry on the next interval. */}
        finally{liveChecking=null;}
+     }
+     for(const w of watchers.values())if(w.profileId===id&&w.status==='watching'){
+       if(Date.now()>=w.expires)w.status='expired';
+       else if(w.entity!==p.entityId||w.credential!==p.credential||w.world!==c.state?.world)w.status='cancelled';
+       else if((demo||c.state?.connection==='Live')&&!c.historyCoverage?.pending&&evaluateTrigger(w,c)){
+         w.status='fired';c.messages.push({id:randomUUID(),role:'notice',timelineSeq:c.state.cursor||0,time:new Date().toISOString(),text:'Watch triggered: '+w.kind});await store.save();
+       }
      }
      try{if(!autoJobs.has(id))await runReadied({profile:p,character:c,store,execute,demo,saving:savingReadied});tickPilot(p);}catch{/* Leave any interrupted delivery unconfirmed. */}
      try{await tickReturn(p);}catch{/* Saved bookmark remains available for retry. */}

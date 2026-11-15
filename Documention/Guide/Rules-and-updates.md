@@ -2,13 +2,19 @@
 
 # Rules & updates
 
-Use **Rules & updates** to read engine changes and keep your Codex instructions aligned with the current game.
+Use **Rules & updates** for two separate feeds: harness release notes and game-engine rules.
 
-## Read the rules feed
+## Harness updates
 
-The harness checks the engine's reported rules version during live sync and fetches updates when needed. Choose **Check for updates** to request a check yourself. The tab shows the downloaded version, pending updates or errors, and expandable source changelog pages.
+The top panel displays the installed build's [CHANGELOG.md](../../CHANGELOG.md), the same notes linked prominently from the GitHub README. The newest section is expanded; open older sections for previous changes. **Reload harness notes** reads that local file again. **View changelog source** opens the original Markdown.
 
-Choose **Mark updates seen** after reading. This is your local reading marker, separate from acknowledging a successful download to the engine.
+These are software feature and fix notes, not game rules. They do not go into agent rules context or affect the engine's read marker. **Unreleased** means changes in the working build, not a published release. This panel does not check GitHub for a newer installation or download code; update the harness as described in the [README](../../README.md).
+
+## Read the engine rules feed
+
+The harness checks the engine's reported rules version during live sync and fetches updates when needed. Choose **Check engine rules** to request a check yourself. The tab shows the downloaded version, pending updates or errors, and expandable source changelog pages.
+
+Choose **Mark engine updates seen** after reading. This is your local reading marker, separate from acknowledging a successful download to the engine.
 
 Downloaded rules context is supplied with Codex requests. Live observations and inspection still take precedence over old notes or remembered mechanics. Historical character memories remain part of the story; a rules update does not rewrite them.
 

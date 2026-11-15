@@ -9,14 +9,14 @@ Glass Reach Harness connects your character, Codex and the live world. Use it to
 | Harness tab | What you use it for |
 | --- | --- |
 | [Play](Play.md) | Read the unfolding story, send thoughts or actions, and catch up after an absence. |
-| [Atlas](Atlas.md) | Explore known connections, request diagrams and illustrate scenes. |
+| [Atlas](Atlas.md) | Explore a growing coordinate map, search places, control labels and commission illustrations. |
 | [Character](Character.md) | Check stats, conditions, progression and belongings. |
 | [People & relationships](People-and-relationships.md) | Look up familiar people, factions and observed standing. |
 | [Journal](Journal.md) | Keep notes, memories and copies of documents you have seen. |
 | [Quests](Quests.md) | Track promises, mysteries, obligations and errands. |
-| [Watch & automation](Watch-and-automation.md) | Set notifications, approve readied actions or configure autopilot. |
+| [Automation](Watch-and-automation.md) | Set notifications, approve readied actions or configure autopilot. |
 | [Settings](Settings.md) | Choose models and themes, edit prompts and manage your session. |
-| [Rules & updates](Rules-and-updates.md) | Read engine changes and review proposed prompt improvements. |
+| [Rules & updates](Rules-and-updates.md) | Read harness release notes, engine changes and proposed prompt improvements. |
 
 ## The everyday loop
 
@@ -30,4 +30,4 @@ The character dropdown and **Sync** button are at the top. The message composer 
 
 Keep the harness server running and your PC awake for background work. **Live** controls ordinary feed polling; it does not switch off armed readied actions, explicit watches or autopilot. Generated prose is a summary of the evidence, not a replacement for the original game record.
 
-This guide describes the current build. For setup, backups, updating and known limits, see the [project README](../../README.md). Examples in this guide are suggestions to type, not actions that have been carried out.
+Audited against the working build on 15 November 2026. See [release notes](../../CHANGELOG.md) for recent changes. For setup, backups, updating and known limits, see the [project README](../../README.md). Examples in this guide are suggestions to type, not actions that have been carried out.

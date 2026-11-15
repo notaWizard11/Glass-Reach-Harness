@@ -13,6 +13,7 @@ export class Store {
     // A request interrupted by a restart is never retried automatically.
     for(const c of Object.values(this.data.characters)) { if(c.agentStatus==='working') c.agentStatus='Interrupted by server restart';c.agentPreview='';for(const q of c.suggestions||[]) {if(q.status==='executing')q.status='uncertain';if(q.status==='reviewing')q.status='pending';}for(const r of Object.values(c.requests||{}))if(r.status==='pending')r.status='uncertain'; }
     for (const c of Object.values(this.data.characters)) {
+      if(c.storyProseJob?.status==='working'){c.storyProseJob.status='error';c.storyProseJob.error='Scene writing was interrupted; it will resume automatically.';}
       if(c.recapJob?.status==='working'){c.recapJob.status='error';c.recapJob.error='The server restarted. Request the recap again to resume from cached sections.';}
       for (const rule of c.readied||[]) {
         if (rule.status!=='executing') continue;
@@ -26,7 +27,7 @@ export class Store {
   profile(id) { const p=this.data.profiles.find(x=>x.id===id); if(!p) throw new Error('Character profile not found.'); return p; }
   character(id) { this.profile(id); return this.data.characters[id]??={state:null,events:[],messages:[],suggestions:[],maps:[],notes:[],organization:{},draft:'',agentStatus:'idle',threadId:null,requests:{}}; }
   save() { const content=JSON.stringify(this.data); const task=this.queue.then(async()=>{ const temp=join(this.dir,randomUUID()+'.tmp'); await writeFile(temp,content,'utf8'); for(let attempt=0;;attempt++){try{await rename(temp,join(this.dir,'ledger.json'));break;}catch(e){if(attempt>=5||!['EPERM','EACCES','EBUSY'].includes(e.code))throw e;await delay(100*(attempt+1));}} }); this.queue=task.catch(()=>{}); return task; }
-  publicData(id) { const c=this.character(id); return {profile:this.profile(id),profiles:this.data.profiles,masterPrompt:this.data.masterPrompt,promptVersions:this.data.promptVersions,model:this.data.model,modelsByPurpose:this.data.modelsByPurpose||{},...c,events:c.events.slice(-600),storyCache:undefined,sceneNarratives:undefined,recaps:(c.recaps||[]).slice(-12),requests:undefined,demo:this.demo}; }
+  publicData(id) { const c=this.character(id); return {profile:this.profile(id),profiles:this.data.profiles,masterPrompt:this.data.masterPrompt,promptVersions:this.data.promptVersions,model:this.data.model,modelsByPurpose:this.data.modelsByPurpose||{},...c,events:c.events.slice(-600),storyCache:undefined,sceneNarratives:undefined,sceneProse:undefined,recaps:(c.recaps||[]).slice(-12),requests:undefined,demo:this.demo}; }
 }
 export function unique(rows,key='id') { return [...new Map(rows.filter(Boolean).map(x=>[x[key],x])).values()]; }
 export function ingest(c, raw, events=[]) {

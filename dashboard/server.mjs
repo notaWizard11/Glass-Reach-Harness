@@ -10,13 +10,33 @@ import { Game, validateOperation } from './game.mjs';
 import { Agent } from './agent.mjs';
 import { prepareReadied, runReadied } from './readied.mjs';
 import { generateSceneImage } from './scene-images.mjs';
-import { storyPage, buildScenes, summarizeHistory, coverageText, describeEvent, historicalNames } from './story.mjs';
+import { storyPage, buildScenes, summarizeHistory, coverageText, describeEvent, historicalNames, sceneEvidence } from './story.mjs';
 export async function startServer({demo=false,port=demo?47382:47381,dataDir,liveIntervalMs=5000,imageGenerator=generateSceneImage}={}) {
  const store=await new Store(dataDir||fileURLToPath(new URL('../.glassreach-data/'+(demo?'demo':'live'),import.meta.url)),demo).init();
  const game=new Game(store,demo),agent=new Agent(store);await game.importLegacy();
  const csrf=randomBytes(24).toString('hex'),watchers=new Map(),liveProfiles=new Map();
  const savingReadied=new WeakSet();
  const storyJobs=new Set();
+ let proseBusy=false;
+ async function writeSceneProse(p,sceneId){
+   const c=store.character(p.id);
+   if(proseBusy||c.agentStatus==='working'||c.historyCoverage?.pending)return {deferred:true};
+   const scene=buildScenes(c).find(scene=>scene.id===String(sceneId));
+   if(!scene)throw new Error('Scene no longer available.');
+   const {events,key}=sceneEvidence(c,scene);
+   if(c.sceneProse?.[scene.id]?.key===key)return {cached:true};
+   if(c.storyProseJob?.scene===scene.id&&Date.now()-Date.parse(c.storyProseJob.started)<60000)return {deferred:true};
+   proseBusy=true;
+   const job=c.storyProseJob={scene:scene.id,status:'working',started:new Date().toISOString()};
+   (async()=>{try{
+     const text=await summarizeHistory({character:c,events,save:()=>store.save(),
+       question:'Write this scene as a short passage in an unfolding novel, in second person for the player character. Integrate the character’s actual dialogue, meaningful actions and confirmed results with surrounding events. Player requests are intentions, not proof of success; assistant results are secondary to game records. Compress routine movement, repeated checks and insignificant actions. Preserve consequential dialogue accurately. Use 120–220 words of flowing prose, without headings, lists or operation names. Cite factual paragraphs with event IDs. Do not invent atmosphere, causation, motives or outcomes.',
+       ask:async(question,evidence)=>demo?events.filter(event=>['say','scene'].includes(event.kind)).map(event=>describeEvent(event,historicalNames(c))+' [#'+event.seq+']').join(' '):(await agent.reply(p,question,'scene-story',undefined,undefined,evidence)).reply});
+     (c.sceneProse??={})[scene.id]={text,key,end:scene.end};job.status='complete';
+   }catch(error){job.status='error';job.error=error.message;}
+   finally{proseBusy=false;await store.save();}})().catch(()=>{job.status='error';job.error='Could not save scene prose.';});
+   return {started:true};
+ }
  const sceneRequests=new Set(),sceneDir=join(store.dir,'scenes');
  let nextLiveAt=Date.now()+liveIntervalMs,liveChecking=null;
  const mobile=process.env.GLASS_REACH_MOBILE_ORIGIN?new URL(process.env.GLASS_REACH_MOBILE_ORIGIN):null,login=process.env.GLASS_REACH_MOBILE_LOGIN;
@@ -55,7 +75,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
    if(options.scene){
      const scene=buildScenes(c).find(item=>item.id===String(options.scene));
      if(!scene)throw new Error('This scene is no longer available. Refresh the storyboard.');
-     events=scene.events;
+     events=sceneEvidence(c,scene).events;
    }else if(options.range==='unread'||!options.range){
      events=events.filter(event=>event.seq>(c.lastReadSeq||0));
    }else if(options.range==='day'){
@@ -112,7 +132,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      if(route==='POST /api/refresh'){await game.refresh(p);return json(res,200,packet(id));}
      if(route==='GET /api/story'){
        return json(res,200,{...storyPage(c,{
-         before:Number(url.searchParams.get('before'))||Infinity,query:(url.searchParams.get('q')||'').slice(0,300),
+         before:Number(url.searchParams.get('before'))||Infinity,query:(url.searchParams.get('q')||'').slice(0,300),limit:Math.min(500,Math.max(12,Number(url.searchParams.get('limit'))||12)),
        }),names:historicalNames(c),coverage:coverageText(c),lastReadSeq:c.lastReadSeq||0,
          unread:c.events.filter(event=>event.seq>(c.lastReadSeq||0)).length,latestSeq:c.events.at(-1)?.seq||0});
      }
@@ -129,6 +149,7 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
        return json(res,200,{lastReadSeq:c.lastReadSeq});
      }
      if(route==='POST /api/story/recap')return json(res,202,await startRecap(p,b));
+     if(route==='POST /api/story/prose')return json(res,202,await writeSceneProse(p,b.scene));
      if(route==='POST /api/inspect')return json(res,200,await game.read(p,b.op,b.args||{}));
      if(route==='POST /api/action')return json(res,200,await execute(p,b.op,b.args,b.requestId));
      if(route==='POST /api/agent'){if(!b.text?.trim())throw new Error('Enter a request.');if(b.mode!=null&&!['chat','game'].includes(b.mode))throw new Error('Choose Talk to Codex or Act in game.');if(b.mode!=='game'&&/catch me up|what (?:did i miss|changed)|summari[sz]e.*(?:missed|recent|events)/i.test(b.text)){return json(res,202,await startRecap(p,{range:'unread',question:b.text}));}await runAgent(p,b.text,b.mode==='game'?'game':['atlas','suggestions'].includes(b.purpose)?b.purpose:'chat');return json(res,202,{ok:true});}

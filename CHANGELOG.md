@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Newest-first, collapsible compact scene cards, automatic book-style prose incorporating player dialogue and actions, and short inner-reflection summaries.
 - Storyboard scene cards with expandable original events, activity strips, and a separate detailed log.
 - Full-archive search and cached, source-linked catch-up recaps; explicit per-character read markers and history coverage notices.
 - Agent questions can retrieve older saved events; historical entity names persist across observations.

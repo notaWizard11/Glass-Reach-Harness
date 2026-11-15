@@ -5,25 +5,26 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
   const button=(text,action)=>{const item=node('button',text);item.type='button';item.onclick=()=>Promise.resolve().then(action).catch(onError);return item;};
   let activeProfile,signature='',requestVersion=0,scenes=[],pageInfo,query='',searchTimer,view='story';
   const collapsedScenes=new Set();
+  let nextProseAt=0;
+  const proseControl=node('label',null,'auto-prose-control'),proseToggle=node('input');
+  proseToggle.type='checkbox';proseToggle.checked=localStorage.getItem('gr-auto-prose')!=='false';
+  proseToggle.onchange=()=>localStorage.setItem('gr-auto-prose',String(proseToggle.checked));
+  proseControl.append(proseToggle,document.createTextNode('Auto prose'));
+  proseControl.title='Use Codex to write scene passages as new records arrive. Uses your conversation model.';
+  $('storyboard-view').prepend(proseControl);
   const time=t=>Number.isFinite(t)?'Day '+(Math.floor(t/86400)+1)+' · '+String(Math.floor(t%86400/3600)).padStart(2,'0')+':'+String(Math.floor(t%3600/60)).padStart(2,'0'):'Time unrecorded';
 
   function narrative(text){
     const content=node('div',null,'scene-narrative');
     for(const paragraph of text.split(/\n\s*\n/)){
-      const p=node('p');
-      for(const part of paragraph.split(/(\[#\d+\])/g)){
-        const reference=part.match(/^\[#(\d+)\]$/);
-        if(reference){
-          const selected=getProfile();
-          const link=button('#'+reference[1],async()=>{
-            const record=await api('event?seq='+reference[1],undefined,selected);
-            openDetails(record.text,record.event);
-          });
-          link.className='quiet source-link';link.title='Open the recorded event';
-          p.append(link);
-        }else p.append(document.createTextNode(part));
+      content.append(node('p',paragraph.replace(/\[#\d+\]/g,'').replace(/ {2,}/g,' ').trim()));
+      const refs=[...new Set([...paragraph.matchAll(/\[#(\d+)\]/g)].map(match=>match[1]))];
+      if(refs.length){
+        const sources=node('details',null,'scene-sources');sources.append(node('summary','Sources · '+refs.length));
+        const selected=getProfile();
+        for(const ref of refs){const link=button('#'+ref,async()=>{const record=await api('event?seq='+ref,undefined,selected);openDetails(record.text,record.event);});link.className='quiet source-link';sources.append(link);}
+        content.append(sources);
       }
-      content.append(p);
     }
     return content;
   }
@@ -60,37 +61,30 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
       head.append(heading,summarize,node('small',time(scene.startTime)+' — '+time(scene.endTime)));
       shell.append(head,card);
       if(scene.participants.length)card.append(node('p',scene.participants.join(' · '),'caption'));
-      if(scene.summary)card.append(narrative(scene.summary));
-      else{
-        const significant=scene.events.filter(event=>['scene','say','hit','downed','died','act','given','found'].includes(event.kind)).slice(0,5);
-        const lines=significant.length?significant:scene.events.slice(0,3);
-        const overview=node('div',null,'scene-narrative');
-        for(const event of lines){
-          const line=scene.lines.find(line=>line.seq===event.seq);
-          if(line){const excerpt=narrative(line.text+' [#'+event.seq+']');excerpt.classList.add('story-entry');excerpt.dataset.kind=storyRows([event],[])[0].category;overview.append(excerpt);}
-        }
-        card.append(overview);
+      if(scene.prose)card.append(narrative(scene.prose));
+      if(!scene.proseFresh){
+        const job=getData()?.storyProseJob;
+        const pending=job?.scene===scene.id&&job.status==='working';
+        const error=job?.scene===scene.id&&job.status==='error'?job.error:null;
+        card.append(node('p',error?'Scene prose unavailable: '+error:pending?'Writing this scene…':scene.prose?'New events are waiting to be woven into this passage.':'The scene passage is waiting to be written. Open the record below to read events now.','caption'));
+        if(!proseToggle.checked||error)card.append(button('Write scene',async()=>{await api('story/prose',{scene:scene.id},selected);signature='';}));
       }
-      const movements=scene.events.filter(event=>['arrived','moved','left','drank','embodied','released'].includes(event.kind));
-      if(movements.length)card.append(node('p',movements.slice(0,5).map(event=>scene.lines.find(line=>line.seq===event.seq)?.text).join(' · ')+(movements.length>5?' · +'+(movements.length-5)+' more':''),'scene-activity'));
+      if(scene.summary){const reflection=node('aside',null,'scene-reflection');reflection.append(node('small','Inner reflection'),narrative(scene.summary));card.append(reflection);}
       const records=node('details');
       records.dataset.scene=scene.id;records.open=expanded.has(scene.id);
-      records.append(node('summary','View '+scene.events.length+' recorded events'));
-      for(const event of scene.events){
-        const line=scene.lines.find(line=>line.seq===event.seq);
-        const row=node('div',null,'scene-record story-entry');row.dataset.kind=storyRows([event],[])[0].category;
-        row.append(node('small',time(event.t)+' · #'+event.seq+' · '+event.kind),node('p',line?.text||event.kind));
-        row.append(button('Details',()=>openDetails(line?.text||event.kind,event)));
+      const exchanges=(getData()?.messages||[]).filter(message=>message.timelineSeq>=scene.start&&message.timelineSeq<=scene.end);
+      const rows=storyRows(scene.events,exchanges);
+      records.append(node('summary','Explore '+rows.length+' events, dialogue & player entries'));
+      for(const entry of rows){
+        const row=node('div',null,'scene-record story-entry');row.dataset.kind=entry.category;
+        if(entry.event){
+          const event=entry.event,line=scene.lines.find(line=>line.seq===event.seq);
+          row.append(node('small',time(event.t)+' · #'+event.seq+' · '+entry.label),node('p',line?.text||event.kind));
+          row.append(button('Details',()=>openDetails(line?.text||event.kind,event)));
+        }else row.append(node('small',entry.label),node('p',entry.message.text));
         records.append(row);
       }
       card.append(records);
-      const exchanges=(getData()?.messages||[]).filter(message=>message.timelineSeq>=scene.start&&message.timelineSeq<=scene.end);
-      if(exchanges.length){
-        const conversation=node('details');
-        conversation.append(node('summary',exchanges.length+' player messages, thoughts & results'));
-        for(const message of exchanges)conversation.append(node('p',(message.role==='error'?'System: ':message.role==='user'?'You: ':message.mode==='game'?'Outcome: ':'Inner thoughts: ')+message.text));
-        card.append(conversation);
-      }
       root.append(shell);
     }
     if(!scenes.length)root.append(node('p',query?'No scenes match this search.':'Your scenes will appear when game events arrive.','empty'));
@@ -100,7 +94,7 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
     const selected=getProfile(),version=++requestVersion;
     const before=older&&scenes.length?'&before='+scenes[0].start:'';
     try{
-      const result=await api('story?q='+encodeURIComponent(query)+before,undefined,selected);
+      const result=await api('story?q='+encodeURIComponent(query)+before+(!older?'&limit='+Math.max(12,scenes.length):''),undefined,selected);
       if(version!==requestVersion||getProfile()!==selected)return;
       pageInfo=result;
       scenes=older?[...result.scenes,...scenes]:[...scenes.filter(scene=>scene.start<(result.scenes[0]?.start||0)),...result.scenes];
@@ -132,7 +126,11 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
       collapsedScenes.clear();
       query='';$('story-search').value='';
     }
-    const next=JSON.stringify([activeProfile,data.events?.[0]?.seq,data.events?.at(-1)?.seq,data.lastReadSeq,data.historyCoverage,data.recapJob?.status,data.agentStatus,data.messages?.length]);
+    if(proseToggle.checked&&view==='story'&&!document.hidden&&data.agentStatus!=='working'&&!data.historyCoverage?.pending&&data.storyProseJob?.status!=='working'&&Date.now()>nextProseAt){
+      const pending=[...scenes].reverse().find(scene=>!scene.proseFresh);
+      if(pending){nextProseAt=Date.now()+30000;api('story/prose',{scene:pending.id}).then(()=>{signature='';}).catch(error=>{$('recap-status').textContent=error.message;});}
+    }
+    const next=JSON.stringify([activeProfile,data.events?.[0]?.seq,data.events?.at(-1)?.seq,data.lastReadSeq,data.historyCoverage,data.recapJob?.status,data.storyProseJob,data.agentStatus,data.messages?.length]);
     if(signature!==next){signature=next;loadScenes();}
     const job=data.recapJob;
     $('catch-up').disabled=data.agentStatus==='working';
@@ -142,7 +140,7 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
     if(nextRecaps!==recapSignature){
       recapSignature=nextRecaps;
       $('saved-recaps').replaceChildren();
-      for(const recap of [...recaps].reverse()){
+      for(const recap of [...recaps].reverse().filter(recap=>!recap.scene)){
         const card=node('details',null,'recap-card');
         card.open=recap.id===job?.id;
         card.append(node('summary',(recap.scene?'Scene summary':'Catch-up')+' · '+recap.count+' events · '+new Date(recap.created).toLocaleString()));

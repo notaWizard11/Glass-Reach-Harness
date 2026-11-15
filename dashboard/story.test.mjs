@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {buildScenes,storyPage,searchHistory,summarizeHistory} from './story.mjs';
+import {buildScenes,storyPage,searchHistory,summarizeHistory,sceneEvidence} from './story.mjs';
 import {startServer} from './server.mjs';
 
 const character=()=>({names:{gate:'Gate Yard',road:'Salt Road',sera:'Sera'},state:{you:{id:'me'}},events:Array.from({length:1000},(_,i)=>({seq:i+1,t:i*60,kind:'say',actor:'sera',payload:{text:i===2?'Hollis left a silver wedge.':'The road is quiet.'},observedLocation:'gate'}))});
@@ -25,12 +25,26 @@ test('long recaps cover all input events, reject invented references and reuse c
  assert.equal(seen.size,1000);assert.ok(calls>2);assert.equal(saves,calls);assert.ok(!result.includes('#999999'));
  const count=calls;assert.equal(await summarizeHistory({character:c,events:c.events,ask}),result);assert.equal(calls,count);
 });
+test('scene prose evidence includes player intentions and results without presenting private thoughts as events',()=>{
+ const c=character();c.messages=[{mode:'game',role:'user',timelineSeq:3,text:'Ask about Hollis.'},{mode:'game',role:'assistant',timelineSeq:4,text:'You ask Sera.'},{mode:'chat',role:'user',timelineSeq:4,text:'I suspect she is lying.'}];
+ const scene=buildScenes(c)[0],first=sceneEvidence(c,scene);
+ assert.equal(first.events.flatMap(e=>e.playerRecord).length,2);
+ assert.equal(first.events[2].playerRecord[0].role,'user');
+ c.messages.push({mode:'game',role:'assistant',timelineSeq:4,text:'She points toward the gate.'});
+ assert.notEqual(sceneEvidence(c,scene).key,first.key);
+});
 test('recaps and polling never mark history read; markers persist per character',async t=>{
  const app=await startServer({demo:true,port:0,dataDir:await mkdtemp(join(tmpdir(),'gr-story-test-'))});t.after(()=>app.stop());
  let csrf;
  const call=async(path,body)=>{const r=await fetch(app.url+'api/'+path,{method:body===undefined?'GET':'POST',headers:{'X-Glass-Reach-Dashboard':'1','Content-Type':'application/json',...(csrf?{'X-CSRF-Token':csrf}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json()};};
  csrf=(await call('session')).data.csrf;
  const page=(await call('story')).data;assert.equal(page.unread,9);
+ await call('story/prose',{scene:page.scenes[0].id});
+ assert.equal(app.store.character('aaron').agentStatus,'idle','background prose must not block play');
+ for(let n=0;n<100&&app.store.character('aaron').storyProseJob.status==='working';n++)await new Promise(resolve=>setTimeout(resolve,10));
+ const written=(await call('story')).data.scenes[0];
+ assert.equal(written.proseFresh,true);assert.ok(written.prose.includes('[#3]'));
+ assert.equal((await call('story/prose',{scene:written.id})).data.cached,true);
  assert.equal((await call('event?seq=1')).status,200);
  await call('story/recap',{range:'all'});
  for(let n=0;n<100&&app.store.character('aaron').recapJob.status==='working';n++)await new Promise(resolve=>setTimeout(resolve,10));

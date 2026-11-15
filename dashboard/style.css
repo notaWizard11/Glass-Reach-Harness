@@ -396,3 +396,9 @@
 .recap-card .caption{padding:0}
 .source-link{display:inline;padding:0 3px;font:11px 'Segoe UI',sans-serif}
 #story-older{margin-left:17px}
+.auto-prose-control{display:flex;align-items:center;gap:6px;margin:10px 17px;font-size:11px;color:var(--muted)}
+.auto-prose-control input{width:auto}
+.scene-reflection{border-top:1px solid var(--line);margin-top:10px;padding-top:7px;color:var(--muted)}
+.scene-reflection small{font:10px 'Segoe UI',sans-serif;color:var(--gold)}
+.scene-sources{color:var(--muted);font:10px 'Segoe UI',sans-serif}
+.scene-card .scene-sources summary,.recap-card .scene-sources summary{font-size:10px;padding:2px 0 5px}

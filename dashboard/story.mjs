@@ -55,6 +55,15 @@ export function buildScenes(character) {
   return scenes;
 }
 
+export function sceneEvidence(character,scene){
+  const messages=(character.messages||[]).filter(message=>message.mode==='game'&&message.timelineSeq>=scene.start&&message.timelineSeq<=scene.end);
+  const events=scene.events.map(event=>({...event,playerRecord:messages.filter(message=>message.timelineSeq===event.seq).map(({role,text})=>({role,text}))}));
+  // A message can be anchored to a cursor without an event visible to this character.
+  const unattached=messages.filter(message=>!events.some(event=>event.seq===message.timelineSeq));
+  if(events.length&&unattached.length)events.at(-1).playerRecord.push(...unattached.map(({role,text})=>({role,text})));
+  return {events,key:createHash('sha256').update('book-v1'+JSON.stringify(events)).digest('hex')};
+}
+
 export function storyPage(character,{before=Infinity,query='',limit=12}={}) {
   const names=historicalNames(character),words=query.toLowerCase().trim();
   const all=buildScenes(character).filter(scene=>scene.start<before);
@@ -64,6 +73,8 @@ export function storyPage(character,{before=Infinity,query='',limit=12}={}) {
     ...scene,
     participants:[...new Set(scene.events.map(e=>e.payload?.by||e.payload?.who||e.actor).filter(Boolean))].map(id=>names[id]||id),
     summary:character.sceneNarratives?.[scene.id]?.end===scene.end?character.sceneNarratives[scene.id].text:null,
+    prose:character.sceneProse?.[scene.id]?.text||null,
+    proseFresh:character.sceneProse?.[scene.id]?.key===sceneEvidence(character,scene).key,
     lines:scene.events.map(event=>({seq:event.seq,text:describeEvent(event,names)})),
   })),more:matches.length>scenes.length,before:scenes[0]?.start,total:character.events.length};
 }

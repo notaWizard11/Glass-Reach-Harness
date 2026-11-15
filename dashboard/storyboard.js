@@ -4,6 +4,7 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
   const node=(tag,text,cls)=>{const item=document.createElement(tag);if(text!=null)item.textContent=text;if(cls)item.className=cls;return item;};
   const button=(text,action)=>{const item=node('button',text);item.type='button';item.onclick=()=>Promise.resolve().then(action).catch(onError);return item;};
   let activeProfile,signature='',requestVersion=0,scenes=[],pageInfo,query='',searchTimer,view='story';
+  const collapsedScenes=new Set();
   const time=t=>Number.isFinite(t)?'Day '+(Math.floor(t/86400)+1)+' · '+String(Math.floor(t%86400/3600)).padStart(2,'0')+':'+String(Math.floor(t%3600/60)).padStart(2,'0'):'Time unrecorded';
 
   function narrative(text){
@@ -41,11 +42,23 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
   function renderScenes(){
     const root=$('story-scenes'),expanded=new Set([...root.querySelectorAll('details[open]')].map(item=>item.dataset.scene));
     root.replaceChildren();
-    for(const scene of scenes){
-      const card=node('article',null,'scene-card');
+    for(const scene of [...scenes].sort((a,b)=>b.start-a.start)){
+      const shell=node('article',null,'scene-card');
+      const card=node('div',null,'scene-card-body');
+      card.id='scene-body-'+scene.id;card.hidden=collapsedScenes.has(scene.id);
       const head=node('div',null,'scene-card-heading');
-      head.append(node('h3',scene.title),node('small',time(scene.startTime)+' — '+time(scene.endTime)));
-      card.append(head);
+      const title=button(scene.title,()=>{card.hidden=!card.hidden;title.setAttribute('aria-expanded',String(!card.hidden));if(card.hidden)collapsedScenes.add(scene.id);else collapsedScenes.delete(scene.id);});
+      title.className='scene-title-toggle';title.setAttribute('aria-expanded',String(!card.hidden));title.setAttribute('aria-controls',card.id);
+      const heading=node('h3');heading.append(title);
+      const selected=getProfile();
+      const summarize=button('Summarize',async()=>{
+        await api('story/recap',{scene:scene.id},selected);
+        collapsedScenes.delete(scene.id);card.hidden=false;title.setAttribute('aria-expanded','true');
+        $('recap-status').textContent='Reflecting on this scene…';
+      });
+      summarize.className='scene-summarize';summarize.disabled=getData()?.agentStatus==='working';
+      head.append(heading,summarize,node('small',time(scene.startTime)+' — '+time(scene.endTime)));
+      shell.append(head,card);
       if(scene.participants.length)card.append(node('p',scene.participants.join(' · '),'caption'));
       if(scene.summary)card.append(narrative(scene.summary));
       else{
@@ -57,11 +70,6 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
           if(line){const excerpt=narrative(line.text+' [#'+event.seq+']');excerpt.classList.add('story-entry');excerpt.dataset.kind=storyRows([event],[])[0].category;overview.append(excerpt);}
         }
         card.append(overview);
-        const selected=getProfile();
-        card.append(button('Narrate this scene',async()=>{
-          await api('story/recap',{scene:scene.id},selected);
-          $('recap-status').textContent='Preparing the scene narrative…';
-        }));
       }
       const movements=scene.events.filter(event=>['arrived','moved','left','drank','embodied','released'].includes(event.kind));
       if(movements.length)card.append(node('p',movements.slice(0,5).map(event=>scene.lines.find(line=>line.seq===event.seq)?.text).join(' · ')+(movements.length>5?' · +'+(movements.length-5)+' more':''),'scene-activity'));
@@ -83,7 +91,7 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
         for(const message of exchanges)conversation.append(node('p',(message.role==='error'?'System: ':message.role==='user'?'You: ':message.mode==='game'?'Outcome: ':'Inner thoughts: ')+message.text));
         card.append(conversation);
       }
-      root.append(card);
+      root.append(shell);
     }
     if(!scenes.length)root.append(node('p',query?'No scenes match this search.':'Your scenes will appear when game events arrive.','empty'));
     $('story-older').hidden=!pageInfo?.more;
@@ -121,9 +129,10 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
     const data=getData();if(!data)return;
     if(activeProfile!==getProfile()){
       activeProfile=getProfile();signature='';recapSignature='';scenes=[];pageInfo=null;
+      collapsedScenes.clear();
       query='';$('story-search').value='';
     }
-    const next=JSON.stringify([activeProfile,data.events?.[0]?.seq,data.events?.at(-1)?.seq,data.lastReadSeq,data.historyCoverage,data.recapJob?.status,data.messages?.length]);
+    const next=JSON.stringify([activeProfile,data.events?.[0]?.seq,data.events?.at(-1)?.seq,data.lastReadSeq,data.historyCoverage,data.recapJob?.status,data.agentStatus,data.messages?.length]);
     if(signature!==next){signature=next;loadScenes();}
     const job=data.recapJob;
     $('catch-up').disabled=data.agentStatus==='working';
@@ -136,7 +145,7 @@ export function mountStoryboard({api,getData,getProfile,onError,openDetails}){
       for(const recap of [...recaps].reverse()){
         const card=node('details',null,'recap-card');
         card.open=recap.id===job?.id;
-        card.append(node('summary',(recap.scene?'Scene narrative':'Catch-up')+' · '+recap.count+' events · '+new Date(recap.created).toLocaleString()));
+        card.append(node('summary',(recap.scene?'Scene summary':'Catch-up')+' · '+recap.count+' events · '+new Date(recap.created).toLocaleString()));
         card.append(node('p',recap.coverage,'caption'),narrative(recap.text));
         if(recap.end){
           const selected=activeProfile;

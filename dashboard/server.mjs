@@ -71,10 +71,10 @@ export async function startServer({demo=false,port=demo?47382:47381,dataDir,live
      try{
        const text=await summarizeHistory({
          character:c,events,cancelled:()=>c.stopRequested,save:()=>store.save(),
-         question:options.question||'Tell the story of this interval in chronological order. Include changes for my character, who arrived or left, important dialogue and unresolved matters. Cite every factual paragraph.',
+         question:options.scene?'Analyze all the supplied scene logs, then reflect in the character’s inner voice. Write a short prose summary of 80–150 words in one or two paragraphs, without headings or bullet points. Focus on what happened, what changed, and what remains uncertain. Cite supporting events.':options.question||'Tell the story of this interval in chronological order. Include changes for my character, who arrived or left, important dialogue and unresolved matters. Cite every factual paragraph.',
          progress:message=>{job.progress=message;c.agentPreview=message;},
          ask:async(question,evidence)=>demo?evidence.split('\n').slice(0,8).map(line=>line.split(' {')[0]).join('\n\n'):
-           (await agent.reply(p,question,'recap',undefined,undefined,evidence)).reply,
+           (await agent.reply(p,question,options.scene?'scene-summary':'recap',undefined,undefined,evidence)).reply,
        });
        if(c.stopRequested)throw new Error('Recap stopped.');
        Object.assign(job,{status:'complete',text});

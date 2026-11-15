@@ -372,17 +372,26 @@
 .story-controls .caption{padding:0}
 #storyboard-view{padding-bottom:14px}
 #story-scenes{padding:0 17px;max-height:72vh;overflow:auto;scrollbar-color:var(--subtle-border) transparent}
-.scene-card{border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:6px;margin:14px 0;padding:16px;background:var(--panel2)}
-.scene-card-heading{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.scene-card{border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:6px;margin:10px 6px;padding:11px 12px;background:var(--panel2);font-size:13px;line-height:1.45}
+.scene-card-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.scene-card-heading h3{margin:0;font-size:17px}
+.scene-card-heading small{flex-basis:100%;font-size:10px}
+.scene-title-toggle{padding:0;border:0;background:transparent;color:var(--text);font:inherit;text-align:left}
+.scene-title-toggle::before{content:'▾';display:inline-block;width:16px;font:11px 'Segoe UI',sans-serif;color:var(--gold)}
+.scene-title-toggle[aria-expanded=false]::before{content:'▸'}
+.scene-summarize{font-size:10px;padding:3px 7px;line-height:1.3}
+.scene-card-body{padding-top:5px}
+.scene-card .story-entry{margin:6px 3px;padding:7px 10px;font-size:13px;line-height:1.45}
+.scene-card p,.recap-card p{margin:6px 0}
 .scene-card-heading small{color:var(--muted)}
 .scene-card .caption{padding:0}
-.scene-narrative{font:16px/1.7 Georgia,serif;white-space:pre-wrap;overflow-wrap:anywhere}
+.scene-narrative{font:14px/1.5 Georgia,serif;white-space:pre-wrap;overflow-wrap:anywhere}
 .scene-activity{padding:10px;background:var(--movement-bg);color:var(--text);font-size:12px;border-left:2px solid var(--movement-accent)}
-.scene-record{border-top:1px solid var(--line);padding:10px 0}
+.scene-record{border-top:1px solid var(--line);padding:6px 0}
 .scene-record small{color:var(--muted)}
 .scene-record p{white-space:pre-wrap;overflow-wrap:anywhere}
 .scene-card details>p{white-space:pre-wrap;overflow-wrap:anywhere}
-.scene-card summary,.recap-card summary{padding:12px 0;font:14px 'Segoe UI',sans-serif}
+.scene-card summary,.recap-card summary{padding:8px 0;font:12px 'Segoe UI',sans-serif}
 .recap-card{padding:0 17px 12px;border-bottom:1px solid var(--line);background:var(--result-bg)}
 .recap-card .caption{padding:0}
 .source-link{display:inline;padding:0 3px;font:11px 'Segoe UI',sans-serif}

@@ -4,6 +4,7 @@ Brief notes on harness features and fixes, newest first. Unreleased entries desc
 
 ## Unreleased — 2026-11-15
 
+- Added optional response popups outside Play: replies stack beside the composer, newest at the bottom, with quick fade-in, dismissal and a slower fade-out after 15 seconds.
 - Live atlas now accumulates engine coordinates, place sizes, landmarks and routes separately for each character and world.
 - Added location search, jump-and-zoom, Centre on Self and Zoom to Self, with a wider map and a compact left-hand location list.
 - Added collision-aware labels, selectable zoom focus and persistent label-category toggles in the map legend.

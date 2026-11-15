@@ -25,6 +25,12 @@ For example, use Inner thoughts for “What do I know about this person?” Use 
 
 Game requests proceed one step at a time with fresh observations. **Stop** prevents later steps; it cannot undo a command already sent. A refusal or uncertain result ends the sequence rather than automatically retrying it.
 
+## Follow replies from other tabs
+
+When you send an **Inner thoughts** or **Act in game** request outside Play, its reply appears in a floating box beside the composer. New replies stack at the bottom and push older ones up. Each box fades in quickly, stays for 15 seconds, then fades out more slowly. Click **×** to dismiss it; the remaining boxes slide into place. **Read in Play** takes you back to the story.
+
+Use **Response popups**, above **Reflect/Act**, to turn this feature on or off. Your choice is remembered in this browser. Popups never appear on Play, and returning there clears the stack. Old replies and unrelated background activity do not trigger popups. On narrower screens, the boxes sit above the composer.
+
 ## Leave and return
 
 Click **Set Away** to save a departure bookmark. When you come back, choose **Return to Active · summarize**. The saved **While you were away** briefing covers the interval's high points, not every scene. It queues if Codex is busy; failed briefings can be retried without moving the bookmarks.
